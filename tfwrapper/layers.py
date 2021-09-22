@@ -1,23 +1,19 @@
 import tensorflow as tf
+from tensorflow.keras import Model, layers
 import numpy as np
 import configuration as config
 
 from tfwrapper import utils
 
-from tensorflow.compat.v1.initializers import glorot_normal, glorot_uniform, he_normal, he_uniform
 
 
 def max_pool_layer2d(x, kernel_size=(2, 2), strides=(2, 2), padding="SAME"):
     '''
     2D max pooling layer with standard 2x2 pooling as default
     '''
-
-    kernel_size_aug = [1, kernel_size[0], kernel_size[1], 1]
-    strides_aug = [1, strides[0], strides[1], 1]
-
-    op = tf.nn.max_pool2d(x, ksize=kernel_size_aug, strides=strides_aug, padding=padding)
-
-    return op
+    pool_size = (kernel_size[0], kernel_size[1])
+    strides = (strides[0], strides[1])
+    return layers.MaxPooling2D(pool_size=pool_size, strides=strides, padding=padding)(x)
 
 
 def avg_pool_layer2d(x, kernel_size=(2, 2), strides=(2, 2), padding="SAME"):
@@ -25,12 +21,9 @@ def avg_pool_layer2d(x, kernel_size=(2, 2), strides=(2, 2), padding="SAME"):
     2D average pooling layer with standard 2x2 pooling as default
     '''
 
-    kernel_size_aug = [1, kernel_size[0], kernel_size[1], 1]
-    strides_aug = [1, strides[0], strides[1], 1]
-
-    op = tf.nn.avg_pool2d(x, ksize=kernel_size_aug, strides=strides_aug, padding=padding)
-
-    return op
+    pool_size = (kernel_size[0], kernel_size[1])
+    strides = (strides[0], strides[1])
+    return layers.AveragePooling2D(pool_size=pool_size, strides=strides, padding=padding)(x)
 
 
 def max_pool_layer3d(x, kernel_size=(2, 2, 2), strides=(2, 2, 2), padding="SAME"):
@@ -38,118 +31,36 @@ def max_pool_layer3d(x, kernel_size=(2, 2, 2), strides=(2, 2, 2), padding="SAME"
     3D max pooling layer with 2x2x2 pooling as default
     '''
 
-    kernel_size_aug = [1, kernel_size[0], kernel_size[1], kernel_size[2], 1]
-    strides_aug = [1, strides[0], strides[1], strides[2], 1]
-
-    op = tf.nn.max_pool3d(x, ksize=kernel_size_aug, strides=strides_aug, padding=padding)
-
-    return op
-
-
-def crop_and_concat_layer(inputs, axis=-1):
-    '''
-    Layer for cropping and stacking feature maps of different size along a different axis. 
-    Currently, the first feature map in the inputs list defines the output size. 
-    The feature maps can have different numbers of channels. 
-    :param inputs: A list of input tensors of the same dimensionality but can have different sizes
-    :param axis: Axis along which to concatentate the inputs
-    :return: The concatentated feature map tensor
-    '''
-
-    output_size = inputs[0].get_shape().as_list()
-    concat_inputs = [inputs[0]]
-
-    for ii in range(1, len(inputs)):
-
-        larger_size = inputs[ii].get_shape().as_list()
-        start_crop = np.subtract(larger_size, output_size) // 2
-
-        if len(output_size) == 5:  # 3D images
-            cropped_tensor = inputs[ii][:,
-                             start_crop[1]:start_crop[1] + output_size[1],
-                             start_crop[2]:start_crop[2] + output_size[2],
-                             start_crop[3]:start_crop[3] + output_size[3], ...]
-        elif len(output_size) == 4:  # 2D images
-            cropped_tensor = inputs[ii][:,
-                             start_crop[1]:start_crop[1] + output_size[1],
-                             start_crop[2]:start_crop[2] + output_size[2], ...]
-        else:
-            raise ValueError('Unexpected number of dimensions on tensor: %d' % len(output_size))
-
-        concat_inputs.append(cropped_tensor)
-
-    return tf.concat(concat_inputs, axis=axis)
-
-
-def pad_to_size(bottom, output_size):
-    '''
-    A layer used to pad the tensor bottom to output_size by padding zeros around it
-    TODO: implement for 3D data
-    '''
-
-    input_size = bottom.get_shape().as_list()
-    size_diff = np.subtract(output_size, input_size)
-
-    pad_size = size_diff // 2
-    odd_bit = np.mod(size_diff, 2)
-
-    if len(input_size) == 4:
-
-        padded = tf.pad(bottom, paddings=[[0, 0],
-                                          [pad_size[1], pad_size[1] + odd_bit[1]],
-                                          [pad_size[2], pad_size[2] + odd_bit[2]],
-                                          [0, 0]])
-
-        return padded
-
-    elif len(input_size) == 5:
-        raise NotImplementedError('This layer has not yet been extended to 3D')
-    else:
-        raise ValueError('Unexpected input size: %d' % input_size)
+    pool_size = (kernel_size[0], kernel_size[1], kernel_size[2])
+    strides = (strides[0], strides[1], strides[2])
+    return = layers.MaxPool3D(pool_size=pool_size, strides=strides, padding=padding)(x)
 
 
 def dropout_layer(bottom, name, training, keep_prob=0.5):
     '''
     Performs dropout on the activations of an input
     '''
-
-    keep_prob_pl = tf.cond(training,
-                           lambda: tf.constant(keep_prob, dtype=bottom.dtype),
-                           lambda: tf.constant(1.0, dtype=bottom.dtype))
-
-    # The tf.nn.dropout function takes care of all the scaling
-    # (https://www.tensorflow.org/get_started/mnist/pros)
-    return tf.nn.dropout(bottom, rate=keep_prob_pl, name=name)
+    return layers.Dropout(rate=keep_prob)(bottom)
 
 
-def batch_normalisation_layer(bottom, name, training):
+def batch_normalisation_layer(bottom):
     '''
-    Alternative wrapper for tensorflows own batch normalisation function. I had some issues with 3D convolutions
-    when using this. The version below works with 3D convs as well.
-    :param bottom: Input layer (should be before activation)
-    :param name: A name for the computational graph
-    :param training: A tf.bool specifying if the layer is executed at training or testing time
     :return: Batch normalised activation
     '''
-
-    h_bn = tf.compat.v1.layers.batch_normalization(inputs=bottom, momentum=0.99, epsilon=1e-3, training=training,
-                                                   name=name, center=True, scale=True)
-
-    return h_bn
+    return layers.BatchNormalization(momentum=0.99, epsilon=1e-3)(bottom)
 
 
 def upsample(tensor, rate=2):
-    return tf.compat.v1.image.resize_bilinear(tensor, (tf.shape(tensor)[1] * rate, tf.shape(tensor)[2] * rate))
+    return layers.UpSampling2D(size(rate,rate), interpolation='nearest')(tensor)
 
 
 ### FEED_FORWARD LAYERS ##############################################################################
 
 def conv2D_layer(bottom,
-                 name,
                  kernel_size=(3, 3),
                  num_filters=32,
                  strides=(1, 1),
-                 activation=tf.identity,
+                 activation='linear',
                  padding="SAME",
                  weight_init='he_normal',
                  add_bias=True):
@@ -157,42 +68,17 @@ def conv2D_layer(bottom,
     Standard 2D convolutional layer
     bottom = input data
     '''
-    # number of input channels
-    bottom_num_filters = bottom.get_shape().as_list()[-1]
-
-    # define weights and bias structures
-    weight_shape = [kernel_size[0], kernel_size[1], bottom_num_filters, num_filters]
-    bias_shape = [num_filters]
-
-    strides_augm = [1, strides[0], strides[1], 1]
-
-    with tf.compat.v1.variable_scope(name):
-        # initialise weights
-        weights = get_weight_variable(weight_shape, name='W', regularize=True)
-        op = tf.nn.conv2d(bottom, filters=weights, strides=strides_augm, padding=padding)
-
-        biases = None
-        if add_bias:
-            # initialise bias for the filter
-            biases = get_bias_variable(bias_shape, name='b')
-            op = tf.nn.bias_add(op, biases)
-        # apply activation
-        op = activation(op)
-
-        # Add Tensorboard summaries
-        _add_summaries(op, weights, biases)
-
-        return op
+    return layers.Conv2D(filters=num_filters, kernel_size=kernel_size, strides=strides, padding=padding, 
+                         activation=activation, use_bias=add_bias, kernel_initializer=weight_init)(bottom)
 
 
 # dense block
 def dense_block(bottom,
-                name,
                 training,
                 kernel_size=(3, 3),
                 growth_rate=32,
                 strides=(1, 1),
-                activation=tf.nn.relu,
+                activation=tf.keras.activations.relu,
                 padding="SAME",
                 weight_init='he_normal',
                 n_layers=4):
@@ -200,92 +86,72 @@ def dense_block(bottom,
     num_filters:= growth_rate
     MOre details here: https://towardsdatascience.com/paper-review-densenet-densely-connected-convolutional-networks-acf9065dfefb
     '''
-    # bottom_num_filters = bottom.get_shape().as_list()[-1]
-
     # Bottleneck Layer
-    x = batch_normalisation_layer(bottom, name + '_layer0_bn0', training)
+    x = batch_normalisation_layer(bottom)
     x = activation(x)
     x = conv2D_layer(bottom=x,
-                     name=name + 'layer0_1x1',
                      kernel_size=(1, 1),
                      num_filters=128,
                      strides=strides,
-                     activation=tf.identity,
+                     activation='linear',
                      padding=padding,
                      weight_init=weight_init,
                      add_bias=False)
-    x = dropout_layer(x, name + '_layer0_drop0', training)
+    x = dropout_layer(x)
 
-    x = batch_normalisation_layer(bottom, name + '_layer0_bn1', training)
-    x = activation(x)
-    x = conv2D_layer(bottom=x,
-                     name=name + 'layer0_3x3',
-                     kernel_size=kernel_size,
-                     num_filters=growth_rate,
-                     strides=strides,
-                     activation=tf.identity,
-                     padding=padding,
-                     weight_init=weight_init,
-                     add_bias=False)
-    x = dropout_layer(x, name + '_layer0_drop1', training)
-
-    concat_feat = tf.concat([bottom, x], axis=-1)
+    concat_feat = layers.concatenate([bottom, x], axis=-1)
 
     for i in range(1, n_layers):
-        x = batch_normalisation_layer(concat_feat, name + '_layer' + str(i) + '_bn0', training)
+        x = batch_normalisation_layer(concat_feat)
         x = activation(x)
         x = conv2D_layer(bottom=x,
-                         name=name + '_layer' + str(i) + '_1x1',
                          kernel_size=(1, 1),
                          num_filters=128,
                          strides=strides,
-                         activation=tf.identity,
+                         activation='linear',
                          padding=padding,
                          weight_init=weight_init,
                          add_bias=False)
-        x = dropout_layer(x, name + '_layer' + str(i) + '_drop0', training)
+        x = dropout_layer(x)
 
-        x = batch_normalisation_layer(x, name + '_layer' + str(i) + '_bn1', training)
+        x = batch_normalisation_layer(x)
         x = activation(x)
         x = conv2D_layer(bottom=x,
-                         name=name + '_layer' + str(i) + '_3x3',
                          kernel_size=kernel_size,
                          num_filters=growth_rate,
                          strides=strides,
-                         activation=tf.identity,
+                         activation='linear',
                          padding=padding,
                          weight_init=weight_init,
                          add_bias=False)
-        x = dropout_layer(x, name + '_layer' + str(i) + '_drop1', training)
+        x = dropout_layer(x)
 
-        concat_feat = tf.concat([concat_feat, x], axis=-1)
+        concat_feat = layers.concatenate([concat_feat, x], axis=-1)
 
     return concat_feat
 
 
 def transition_layer(bottom,
-                     name,
                      training,
                      num_filters=32,
-                     activation=tf.nn.relu,
+                     activation=tf.keras.activations.relu,
                      weight_init='he_normal',
                      pool=0):
     '''
     0: avg pool
     1: max pool
     '''
-    x = batch_normalisation_layer(bottom, name + '_bn', training)
+    x = batch_normalisation_layer(bottom)
     x = activation(x)
     x = conv2D_layer(bottom=x,
-                     name=name + '_conv',
                      kernel_size=(1, 1),
                      num_filters=num_filters,
                      strides=(1, 1),
-                     activation=tf.identity,
+                     activation='linear',
                      padding="SAME",
                      weight_init=weight_init,
                      add_bias=False)
-    x = dropout_layer(x, name + '_drop', training)
+    x = dropout_layer(x)
 
     if pool == 0:
         x = avg_pool_layer2d(x)
@@ -296,11 +162,10 @@ def transition_layer(bottom,
 
 
 def conv3D_layer(bottom,
-                 name,
                  kernel_size=(3, 3, 3),
                  num_filters=32,
                  strides=(1, 1, 1),
-                 activation=tf.nn.relu,
+                 activation=tf.keras.activations.relu,
                  padding="SAME",
                  weight_init='he_normal',
                  add_bias=True):
@@ -308,135 +173,52 @@ def conv3D_layer(bottom,
     Standard 3D convolutional layer
     '''
 
-    bottom_num_filters = bottom.get_shape().as_list()[-1]
-
-    weight_shape = [kernel_size[0], kernel_size[1], kernel_size[2], bottom_num_filters, num_filters]
-    bias_shape = [num_filters]
-
-    strides_augm = [1, strides[0], strides[1], strides[2], 1]
-
-    with tf.compat.v1.variable_scope(name):
-        weights = get_weight_variable(weight_shape, name='W', regularize=True)
-        op = tf.nn.conv3d(bottom, filter=weights, strides=strides_augm, padding=padding)
-
-        biases = None
-        if add_bias:
-            biases = get_bias_variable(bias_shape, name='b')
-            op = tf.nn.bias_add(op, biases)
-        op = activation(op)
-
-        # Add Tensorboard summaries
-        _add_summaries(op, weights, biases)
-
-        return op
+    return layers.Conv3D(filters=num_filters, kernel_size=kernel_size, strides=strides,
+                         padding=padding, activation=activation, use_bias=add_bias,
+                         kernel_initializer=weight_init)(bottom)
 
 
 def deconv2D_layer(bottom,
-                   name,
                    kernel_size=(4, 4),
                    num_filters=32,
                    strides=(2, 2),
                    output_shape=None,
-                   activation=tf.nn.relu,
+                   activation='relu',
                    padding="SAME",
                    weight_init='he_normal',
                    add_bias=True):
     '''
-    Standard 2D transpose (also known as deconvolution) layer. Default behaviour upsamples the input by a
-    factor of 2. 
+    Standard 2D transpose (also known as deconvolution) layer.
     '''
 
-    bottom_shape = bottom.get_shape().as_list()
-    if output_shape is None:
-        output_shape = tf.stack(
-            [bottom_shape[0], bottom_shape[1] * strides[0], bottom_shape[2] * strides[1], num_filters])
-
-    bottom_num_filters = bottom_shape[3]
-
-    weight_shape = [kernel_size[0], kernel_size[1], num_filters, bottom_num_filters]
-    bias_shape = [num_filters]
-    strides_augm = [1, strides[0], strides[1], 1]
-
-    with tf.compat.v1.variable_scope(name):
-
-        weights = get_weight_variable(weight_shape, name='W', regularize=True)
-
-        op = tf.nn.conv2d_transpose(bottom,
-                                    filters=weights,
-                                    output_shape=output_shape,
-                                    strides=strides_augm,
-                                    padding=padding)
-
-        biases = None
-        if add_bias:
-            biases = get_bias_variable(bias_shape, name='b')
-            op = tf.nn.bias_add(op, biases)
-        op = activation(op)
-
-        # Add Tensorboard summaries
-        _add_summaries(op, weights, biases)
-
-        return op
+    return layers.Conv2DTranspose(filters=num_filters, kernel_size=kernel_size, strides=strides, 
+                                  padding=padding, use_bias=add_bias, activation=activation,
+                                  kernel_initializer=weight_init)(bottom)
 
 
 def deconv3D_layer(bottom,
-                   name,
                    kernel_size=(4, 4, 4),
                    num_filters=32,
                    strides=(2, 2, 2),
                    output_shape=None,
-                   activation=tf.nn.relu,
+                   activation='relu',
                    padding="SAME",
                    weight_init='he_normal',
                    add_bias=True):
     '''
-    Standard 2D transpose (also known as deconvolution) layer. Default behaviour upsamples the input by a
-    factor of 2. 
+    Standard 3D transpose (also known as deconvolution) layer. 
     '''
 
-    bottom_shape = bottom.get_shape().as_list()
-
-    if output_shape is None:
-        output_shape = tf.stack(
-            [bottom_shape[0], bottom_shape[1] * strides[0], bottom_shape[2] * strides[1], bottom_shape[3] * strides[2],
-             num_filters])
-
-    bottom_num_filters = bottom_shape[4]
-
-    weight_shape = [kernel_size[0], kernel_size[1], kernel_size[2], num_filters, bottom_num_filters]
-
-    bias_shape = [num_filters]
-
-    strides_augm = [1, strides[0], strides[1], strides[2], 1]
-
-    with tf.compat.v1.variable_scope(name):
-
-        weights = get_weight_variable(weight_shape, name='W', regularize=True)
-
-        op = tf.nn.conv3d_transpose(bottom,
-                                    filter=weights,
-                                    output_shape=output_shape,
-                                    strides=strides_augm,
-                                    padding=padding)
-
-        biases = None
-        if add_bias:
-            biases = get_bias_variable(bias_shape, name='b')
-            op = tf.nn.bias_add(op, biases)
-        op = activation(op)
-
-        # Add Tensorboard summaries
-        _add_summaries(op, weights, biases)
-
-        return op
+    return layers.Conv3DTranspose(filters=num_filters, kernel_size=kernel_size, strides=strides, 
+                                  padding=padding, use_bias=add_bias, activation=activation,
+                                  kernel_initializer=weight_init)(bottom)
 
 
 def conv2D_dilated_layer(bottom,
-                         name,
                          kernel_size=(3, 3),
                          num_filters=32,
                          rate=1,
-                         activation=tf.nn.relu,
+                         activation='relu',
                          padding="SAME",
                          weight_init='he_normal',
                          add_bias=True):
@@ -446,54 +228,24 @@ def conv2D_dilated_layer(bottom,
     2015 (https://arxiv.org/pdf/1511.07122.pdf) 
     '''
 
-    bottom_num_filters = bottom.get_shape().as_list()[3]
-
-    weight_shape = [kernel_size[0], kernel_size[1], bottom_num_filters, num_filters]
-    bias_shape = [num_filters]
-
-    with tf.compat.v1.variable_scope(name):
-        weights = get_weight_variable(weight_shape, name='W', regularize=True)
-
-        op = tf.nn.atrous_conv2d(bottom, filters=weights, rate=rate, padding=padding)
-
-        biases = None
-        if add_bias:
-            biases = get_bias_variable(bias_shape, name='b')
-            op = tf.nn.bias_add(op, biases)
-        op = activation(op)
-
-        # Add Tensorboard summaries
-        _add_summaries(op, weights, biases)
-
-        return op
+    return layers.Conv2D(filters=num_filters, kernel_size=kernel_size, strides=strides, padding=padding, 
+                         activation=activation, use_bias=add_bias, kernel_initializer=weight_init,
+                         dilation_rate=(rate,rate))(bottom)
 
 
 def dense_layer(bottom,
-                name,
                 hidden_units=512,
-                activation=tf.nn.relu,
-                weight_init='he_normal'):
+                activation='linear',
+                weight_init='he_normal',
+                add_bias=True):
     '''
     Dense fully connected layer
     '''
 
-    if weight_init == 'he_uniform':
-        kernel_initializer = he_uniform()
-    elif weight_init == 'xavier_normal':
-        kernel_initializer = glorot_normal()
-    elif weight_init == 'xavier_uniform':
-        kernel_initializer = glorot_uniform()
-    else:
-        kernel_initializer = he_normal()
-
-    dn = tf.compat.v1.layers.dense(inputs=bottom,
-                                   units=hidden_units,
-                                   activation=activation,
-                                   kernel_initializer=kernel_initializer,
-                                   bias_initializer=tf.constant_initializer(value=0.0),
-                                   name=name,
-                                   reuse=None)
-    return dn
+    return layers.Dense(units=hidden_units,
+                        activation=activation,
+                        kernel_initializer=weight_init,
+                        use_bias=add_bias)(bottom)
 
 
 # Squeeze and Excitation
@@ -503,35 +255,20 @@ network can adaptively adjust the weighting of each feature map.
 As described in https://arxiv.org/pdf/1709.01507.pdf
 '''
 
-
 def se_block(tensor,
-             name,
-             activation=tf.nn.relu,
-             weight_init='he_normal',
              ratio=16):
     init = tensor
     # number of input channels
     num_filters = tensor.get_shape().as_list()[-1]
+    se_shape = (1, 1, num_filters)
+    
+    se = layers.GlobalAveragePooling2D()(init)
+    se = layers.Reshape(se_shape)(se)
+    se = layers.Dense(num_filters // ratio, activation='relu', kernel_initializer='he_normal', use_bias=False)(se)
+    se = layers.Dense(num_filters, activation='sigmoid', kernel_initializer='he_normal', use_bias=False)(se)
+    
+    return layers.multiply([init, se])
 
-    se = tf.reduce_mean(init, [1, 2], keepdims=True)
-
-    se = dense_layer(se,
-                     name=name + '_0',
-                     hidden_units=num_filters // ratio,
-                     activation=tf.nn.relu,
-                     weight_init=weight_init)
-
-    se = dense_layer(se,
-                     name=name + '_1',
-                     hidden_units=num_filters,
-                     activation=tf.math.sigmoid,
-                     weight_init=weight_init)
-
-    # se = tf.reshape(se, [-1,1,1,num_filters])
-
-    x = tf.math.multiply(init, se)
-
-    return x
 
 
 # Selective Kernel 
@@ -543,14 +280,12 @@ multi-scale spatial information.
 As described in https://arxiv.org/pdf/1903.06586.pdf
 '''
 
-
 def selective_kernel_block(bottom,
-                           name,
                            training,
                            num_filters=32,
                            kernel_size=(3, 3),
                            strides=(1, 1),
-                           activation=tf.nn.relu,
+                           activation='relu',
                            padding="SAME",
                            weight_init='he_normal',
                            M=2,
@@ -560,60 +295,38 @@ def selective_kernel_block(bottom,
     r: number of parameters in the fuse operator
     G: controls the cardinality of each path
     '''
-    # input_feature = bottom.get_shape().as_list()[-1]
-    input_feature = num_filters
-    # d = max(int(input_feature / r), 32)
-    d = int(input_feature / 2)
+    filters = num_filters
+    d = max(int(filters / r), 32)
+    #d = int(input_feature / 2)
     x = bottom
 
-    xs = []
-
     for i in range(M):
-        net = conv2D_dilated_layer_bn(bottom=x,
-                                      name=name + '_dil' + str(i),
-                                      training=training,
-                                      kernel_size=kernel_size,
-                                      num_filters=input_feature,
-                                      rate=1 + i,
-                                      activation=activation,
-                                      padding=padding,
-                                      weight_init=weight_init)
+        net = layers.conv2D(filters=num_filters, kernel_size=kernel_size, strides=strides, padding=padding, 
+                            use_bias=False, kernel_initializer=weight_init, dilation_rate=1+i)(bottom)
+        net = batch_normalisation_layer(net)
+        net = activation(net)
 
-        xs.append(net)
-    for i in range(M):
         if i == 0:
-            U = xs[0]
+            U = net
         else:
-            U = tf.add(U, xs[i])
-    gap = tf.reduce_mean(U, [1, 2], keepdims=True)
-    fc = dense_layer(bottom=gap,
-                     name=name + '_fc',
-                     hidden_units=d,
-                     activation=tf.identity,
-                     weight_init=weight_init)
-    bn = batch_normalisation_layer(fc, name + '_bn', training)
-    act = activation(bn)
+            U = layers.add(U, net)
+            
+    gap = layers.GlobalAveragePooling2D()(U)
+    fc = layers.Dense(d, kernel_initializer='he_normal', use_bias=False)(gap)
+    fcs = fc
 
-    att_vec = []
-
-    for i in range(M):
-        fcs = dense_layer(bottom=act,
-                          name=name + '_fc' + str(i),
-                          hidden_units=input_feature,
-                          activation=tf.identity,
-                          weight_init=weight_init)
-        #fcs = tf.expand_dims(fcs, axis=1)
-        #fcs = tf.expand_dims(fcs, axis=1)
-        fcs_softmax = tf.nn.softmax(fcs)
-        fea_v = tf.multiply(fcs_softmax, xs[i])
-
-        att_vec.append(fea_v)
-    for i in range(M):
-        if i == 0:
-            y = att_vec[0]
+    for _ in range(M):
+        fcs = layers.Dense(input_feature, kernel_initializer='he_normal', use_bias=False)(fcs)
+        if _ == 0:
+            att_vec = fcs
         else:
-            y = tf.add(y, att_vec[i])
-    return y
+            att_vec = layers.add(att_vec, fcs)
+    se_shape(1,1,input_feature)
+    att_vec = layers.Reshape(se_shape)(se)
+    att_vec_softmax = layers.Softmax()(att_vec)
+    fea_v = layers.multiply([fea_U, att_vec_softmax])
+
+    return fea_v
 
 
 # Convolutional block attention module (CBAM)
