@@ -4,17 +4,14 @@ import model_structure
 
 experiment_name = 'test1'
 
-# Model settings Unet2D
-weight_init = 'he_normal'    # xavier_uniform/ xavier_normal/ he_normal /he_uniform /caffe_uniform/ simple/ bilinear
-model_handle = model_structure.unet2D_same
-#model_handle = model_structure.ResUNet
-#model_handle = model_structure.DenseUNet
-#model_handle = model_structure.net1
+# Model settings
+model_handle = model_zoo.unet2D_same
+#model_handle = model_zoo.net1
 
 # Data settings
 data_mode = '2D' 
-image_size = (192, 192)
-nlabels = 4
+image_size = (160, 160)
+nlabels = 2
 train_on_all_data = False 
 gt_exists = True    #True if it exists the ground_trth images, otherwise False.
 
