@@ -15,7 +15,11 @@ def loss(logits, labels, nlabels, loss_type, weight_decay=0.0):
     :param logits: The output of the neural network before the softmax
     :param labels: The ground truth labels in standard (i.e. not one-hot) format
     :param nlabels: The number of GT labels
-    :param loss_type: Can be 'weighted_crossentropy'/'crossentropy'/'dice'/'dice_onlyfg'/'crossentropy_and_dice'/'tversky_loss'/'focal_tversky_loss'
+    :param loss_type: Can be 
+    BCE=binary cross entropy
+    WBCE= weighted BCE
+    
+    'weighted_crossentropy'/'crossentropy'/'dice'/'dice_onlyfg'/'crossentropy_and_dice'/'tversky_loss'/'focal_tversky_loss'
     :param weight_decay: The weight for the L2 regularisation of the network paramters
     :return: The total loss including weight decay, the loss without weight decay, only the weight decay 
     '''
@@ -31,23 +35,26 @@ def loss(logits, labels, nlabels, loss_type, weight_decay=0.0):
             name='weights_norm'
         )
 
-    if loss_type == 'weighted_crossentropy':
-        segmentation_loss = losses.pixel_wise_cross_entropy_loss_weighted(logits, labels,
-                                                                          class_weights=[0.076, 0.308, 0.308, 0.308])
-    elif loss_type == 'crossentropy':
-        segmentation_loss = losses.pixel_wise_cross_entropy_loss(logits, labels)
+    if loss_type == 'WBCE':
+        segmentation_loss = losses.binary_cross_entropy_loss_weighted(logits, labels, class_weights=[0.25, 0.75])
+    elif loss_type == 'BCE':
+        segmentation_loss = losses.binary_cross_entropy_loss(logits, labels)        
     elif loss_type == 'dice':
-        segmentation_loss = losses.dice_loss(logits, labels, only_foreground=False)
-    elif loss_type == 'dice_onlyfg':
-        segmentation_loss = losses.dice_loss(logits, labels, only_foreground=True)
-    elif loss_type == 'crossentropy_and_dice':
-        segmentation_loss = (config.alfa)*losses.pixel_wise_cross_entropy_loss_weighted(logits, labels, class_weights=[0.076, 0.308, 0.308, 0.308]) + (1-config.alfa)*losses.dice_loss(logits, labels, only_foreground=True)
+        segmentation_loss = losses.dice_loss(logits, labels)
     elif loss_type == 'tversky':
-        segmentation_loss = losses.tversky_loss(logits, labels, only_foreground=True)
+        segmentation_loss = losses.tversky_loss(logits, labels)
     elif loss_type == 'focal_tversky':
-        segmentation_loss = losses.focal_tversky_loss(logits, labels, only_foreground=True)
-    elif loss_type == 'crossentropy_and_focal_tversky':
-        segmentation_loss = (config.alfa)*losses.pixel_wise_cross_entropy_loss_weighted(logits, labels, class_weights=[0.076, 0.308, 0.308, 0.308]) + (1-config.alfa)*losses.focal_tversky_loss(logits, labels, only_foreground=True)  
+        segmentation_loss = losses.focal_tversky_loss(logits, labels)
+    elif loss_type == 'focal':
+        segmentation_loss = losses.focal_loss(logits, labels)
+    elif loss_type == 'hybrid_focal':
+        segmentation_loss = losses.hybrid_focal_loss(logits, labels)
+    elif loss_type == 'asymmetric_focal':
+        segmentation_loss = losses.asymmetric_focal_loss(logits, labels)
+    elif loss_type == 'asymmetric_focal_tversky':
+        segmentation_loss = losses.asymmetric_focal_tversky_loss(logits, labels)
+    elif loss_type == 'unified_focal':
+        segmentation_loss = losses.unified_focal_loss(logits, labels)
     else:
         raise ValueError('Unknown loss: %s' % loss_type)
 
@@ -64,7 +71,7 @@ def predict(images, config):
     :return: A prediction mask, and the corresponding softmax output
     '''
     logits = inference(images, config, training=tf.constant(False, dtype=tf.bool))
-    softmax = tf.nn.softmax(logits)
+    sigmoid = tf.nn.sigmoid(logits)
     mask = tf.math.argmax(softmax, axis=-1)
 
     return mask, softmax
