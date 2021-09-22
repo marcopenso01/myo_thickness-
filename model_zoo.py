@@ -1,20 +1,21 @@
 import tensorflow as tf
-
-from tfwrapper import layers
-
-import logging
+from tensorflow.keras import layers 
+from tensorflow.keras import Model 
+from tensorflow.keras.layers import *
 
 
 #same
-def unet2D_same(images, training, nlabels):
-
-    conv1_1 = layers.conv2D_layer_bn(images, 'conv1_1', num_filters=64, training=training)
-    logging.info('conv1_1')
-    logging.info(conv1_1.shape)
-    conv1_2 = layers.conv2D_layer_bn(conv1_1, 'conv1_2', num_filters=64, training=training)
-    logging.info('conv1_2')
-    logging.info(conv1_2.shape)
-
+def unet2D_same(input_tensor, nlabels):
+    
+    inputs = Input(shape=(input_tensor.shape[1], input_tensor.shape[2], 1))
+    x = layers.conv2D(64, 3, strides=1, padding="same")(inputs)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation("relu")(x)
+    x = layers.conv2D(64, 3, strides=1, padding="same")(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation("relu")(x)
+    
+    
     pool1 = layers.max_pool_layer2d(conv1_2)
     logging.info('pool1')
     logging.info(pool1.shape)
@@ -328,3 +329,8 @@ def net1(images, training, nlabels):
     print('pred', pred.shape)
     
     return pred
+
+
+def get_model(images, nlabels, config):
+    
+    return config.model_handle(images, nlabels, config)
