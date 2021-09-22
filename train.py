@@ -11,13 +11,15 @@ import numpy as np
 import logging
 import glob
 import matplotlib.pyplot as plt
+from packaging import version
+from tensorflow.keras import Model, layers
+from tensorflow.keras import backend as K
+
 import utils
 import model as model
-#import read_data
 import configuration as config
 import augmentation as aug
 from background_generator import BackgroundGenerator
-from packaging import version
 
 logging.basicConfig(
     level=logging.INFO # allow DEBUG level messages to pass through the logger
@@ -35,22 +37,6 @@ def run_training(continue_run):
 
     init_step = 0
 
-    if continue_run:
-        logging.info('!!!!!!!!!!!!!!!!!!!!!!!!!!!! Continuing previous run !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-        try:
-            init_checkpoint_path = utils.get_latest_model_checkpoint_path(log_dir, 'model.ckpt')
-            logging.info('Checkpoint path: %s' % init_checkpoint_path)
-            init_step = int(init_checkpoint_path.split('/')[-1].split('-')[-1]) + 1  # plus 1 b/c otherwise starts with eval
-            logging.info('Latest step was: %d' % init_step)
-        except:
-            logging.warning('!!! Didnt find init checkpoint. Maybe first run failed. Disabling continue mode...')
-            continue_run = False
-            init_step = 0
-
-        logging.info('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-
-    train_on_all_data = config.train_on_all_data
-    
     # Load data train
     data = h5py.File(os.path.join(config.data_root, 'train.hdf5'), 'r')
     
@@ -77,112 +63,24 @@ def run_training(continue_run):
         logging.info(images_val.shape)
         logging.info(images_val.dtype)
     
-    # Tell TensorFlow that the model will be built into the default Graph.
-
-    with tf.Graph().as_default():
-
-        # Generate placeholders for the images and labels.
-
-        image_tensor_shape = [config.batch_size] + list(config.image_size) + [1]
-        mask_tensor_shape = [config.batch_size] + list(config.image_size)
-
-        images_pl = tf.compat.v1.placeholder(tf.float32, shape=image_tensor_shape, name='images')
-        labels_pl = tf.compat.v1.placeholder(tf.uint8, shape=mask_tensor_shape, name='labels')
-
-        learning_rate_pl = tf.compat.v1.placeholder(tf.float32, shape=[])
-        training_pl = tf.compat.v1.placeholder(tf.bool, shape=[])
-
-        tf.summary.scalar('learning_rate', learning_rate_pl)
-
-        # Build a Graph that computes predictions from the inference model.
-        logits = model.inference(images_pl, config, training=training_pl) 
-        
-        logging.info('images_pl shape')
-        logging.info(images_pl.shape)
-        logging.info('labels_pl shape')
-        logging.info(labels_pl.shape)
-        logging.info('logits shape:')
-        logging.info(logits.shape)
-        # Add to the Graph the Ops for loss calculation.
-        [loss, _, weights_norm] = model.loss(logits,
-                                             labels_pl,
-                                             nlabels=config.nlabels,
-                                             loss_type=config.loss_type,
-                                             weight_decay=config.weight_decay)  # second output is unregularised loss
-              
-        
-        # record how Total loss and weight decay change over time
-        tf.summary.scalar('loss', loss)  
-        tf.summary.scalar('weights_norm_term', weights_norm)
-
-        # Add to the Graph the Ops that calculate and apply gradients.
-        if config.momentum is not None:
-            train_op = model.training_step(loss, config.optimizer_handle, learning_rate_pl, momentum=config.momentum)
-        else:
-            train_op = model.training_step(loss, config.optimizer_handle, learning_rate_pl)
-
-        # Add the Op to compare the logits to the labels during evaluation.
-        # loss and dice on a minibatch
-        eval_loss = model.evaluation(logits,
-                                     labels_pl,
-                                     images_pl,
-                                     nlabels=config.nlabels,
-                                     loss_type=config.loss_type)
-
-        # Build the summary Tensor based on the TF collection of Summaries.
-        summary = tf.compat.v1.summary.merge_all()
-
-        # Add the variable initializer Op.
-        init = tf.compat.v1.global_variables_initializer()
-
-        # Create a saver for writing training checkpoints.
-
-        if train_on_all_data:
-            max_to_keep = None
-        else:
-            max_to_keep = 5
-
-        saver = tf.compat.v1.train.Saver(max_to_keep=max_to_keep)
-        saver_best_dice = tf.compat.v1.train.Saver()
-        saver_best_loss = tf.compat.v1.train.Saver()
-
-        # Create a session for running Ops on the Graph.
-        configP = tf.compat.v1.ConfigProto()
-        configP.gpu_options.allow_growth = True  # Do not assign whole gpu memory, just use it on the go
-        configP.allow_soft_placement = True  # If a operation is not define it the default device, let it execute in another.
-        sess = tf.compat.v1.Session(config=configP)
-
-        # Instantiate a SummaryWriter to output summaries and the Graph.
-        summary_writer = tf.compat.v1.summary.FileWriter(log_dir, sess.graph)
-
-        # with tf.name_scope('monitoring'):
-
-        val_error_ = tf.compat.v1.placeholder(tf.float32, shape=[], name='val_error')
-        val_error_summary = tf.compat.v1.summary.scalar('validation_loss', val_error_)
-
-        val_dice_ = tf.compat.v1.placeholder(tf.float32, shape=[], name='val_dice')
-        val_dice_summary = tf.compat.v1.summary.scalar('validation_dice', val_dice_)
-
-        val_summary = tf.compat.v1.summary.merge([val_error_summary, val_dice_summary])
-
-        train_error_ = tf.compat.v1.placeholder(tf.float32, shape=[], name='train_error')
-        train_error_summary = tf.compat.v1.summary.scalar('training_loss', train_error_)
-
-        train_dice_ = tf.compat.v1.placeholder(tf.float32, shape=[], name='train_dice')
-        train_dice_summary = tf.compat.v1.summary.scalar('training_dice', train_dice_)
-
-        train_summary = tf.compat.v1.summary.merge([train_error_summary, train_dice_summary])
-
-        # Run the Op to initialize the variables.
-        sess.run(init)
-
-        if continue_run:
-            # Restore session
-            saver.restore(sess, init_checkpoint_path)
-
+    nlabels = config.nlabels
+    
+    #restore previous session
+    if continue_run:
+        logging.info('!!!!!!!!!!!!!!!!!!!!!!!!!!!! Continuing previous run !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+        try:
+            
+            
+        except:
+            logging.warning('!!! Didnt find init checkpoint. Maybe first run failed. Disabling continue mode...')
+            continue_run = False
+            init_step = 0   
+    
+    elif continue_run == False:
         step = init_step
         curr_lr = config.learning_rate
-
+        init_epoch = 0
+        
         no_improvement_counter = 0
         best_val = np.inf
         last_train = np.inf
@@ -192,6 +90,10 @@ def run_training(continue_run):
         train_dice_history = []
         val_dice_history = []
         lr_history = []
+        
+        # Build a model
+        model = model_zoo.get_model(images_train, nlabels, config)
+        model.summary()
 
         for epoch in range(config.max_epochs):
 
@@ -463,8 +365,5 @@ def main():
 
 
 if __name__ == '__main__':
-    # parser = argparse.ArgumentParser(
-    #     description="Train a neural network.")
-    # parser.add_argument("CONFIG_PATH", type=str, help="Path to config file (assuming you are in the working directory)")
-    # args = parser.parse_args() 
+ 
     main()
