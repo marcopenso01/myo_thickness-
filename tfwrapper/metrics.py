@@ -11,46 +11,17 @@ def identify_axis(shape):
     # Exception - Unknown
     else : raise ValueError('Metric: Shape of tensor is neither 2D or 3D.')
 
-      
+
 ################################
 #  Binary cross entropy loss   #
 ################################
-def binary_cross_entropy_loss(y_pred, y_true):
+def binary_cross_entropy_loss(y_true, y_pred):
     '''
     binary cross entropy loss 
     '''
-    loss = losses.BinaryCrossentropy(from_logits=False, (logits=logits, labels=labels))
+    loss = losses.BinaryCrossentropy(from_logits=False)(y_true, y_pred)
     return loss
-
-#######################################
-# Weighted Binary cross entropy loss  #
-#######################################
-def binary_cross_entropy_loss_weighted(logits, labels, class_weights):
-    '''
-    Weighted binary cross entropy loss, with a weight per class
-    :param logits: Network output before sigmoid
-    :param labels: Ground truth masks
-    :param class_weights: A list of the weights for each class
-    :return: weighted binay cross entropy loss
-    '''
-
-    n_class = len(class_weights)
-
-    flat_logits = tf.reshape(logits, [-1, n_class])
-    flat_labels = tf.reshape(labels, [-1, n_class])
-
-    class_weights = tf.constant(np.array(class_weights, dtype=np.float32))
-
-    weight_map = tf.multiply(flat_labels, class_weights)
-    weight_map = tf.reduce_sum(weight_map, axis=1)
-
-    loss_map = tf.nn.sigmoid_cross_entropy_with_logits(logits=flat_logits, labels=flat_labels)
-    weighted_loss = tf.multiply(loss_map, weight_map)
-
-    loss = tf.reduce_mean(weighted_loss)
-
-    return loss
-        
+       
         
 ################################
 #      Dice coefficient        #
