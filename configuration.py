@@ -22,8 +22,7 @@ optimizer_handle = tf.compat.v1.train.AdamOptimizer     #(beta1 = 0.9, beta2 = 0
 schedule_lr = False       #decrease 10 times the LR when loss gradient lower than threshold
 weight_decay = 0 
 momentum = None
-loss_type = 'crossentropy_and_dice'     #'weighted_crossentropy'/'crossentropy'/'dice'/'dice_onlyfg'/'crossentropy_and_dice (alfa,1-alfa)'/'tversky'/'focal_tversky'/crossentropy_and_focal_tversky(alfa,1-alfa) --> https://arxiv.org/pdf/2006.14822.pdf
-alfa = 0.6    #[0-1]    
+loss_type = 
 augment_batch = True
 
 # Augmentation settings
