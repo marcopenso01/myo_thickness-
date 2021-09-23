@@ -203,6 +203,7 @@ def asymmetric_focal_tversky_loss(y_true, y_pred, delta=0.7, gamma=0.75, smooth=
     ----------
     delta : float, optional
         controls weight given to false positive and false negatives, by default 0.7
+	value > 0.5 penalising FN predictions more than FP
     gamma : float, optional
         focal parameter controls degree of down-weighting of easy examples, by default 0.75
     smooth : float, optional
