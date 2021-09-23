@@ -1,16 +1,15 @@
 import tensorflow as tf
-from tensorflow.keras import backend as K
+from tensorflow.keras import losses
 import numpy as np
 
 ################################
 #  Binary cross entropy loss   #
 ################################
-def binary_cross_entropy_loss(logits, labels):
+def binary_cross_entropy_loss(y_pred, y_true):
     '''
     binary cross entropy loss 
     '''
-
-    loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=labels))
+    loss = losses.BinaryCrossentropy(from_logits=False, (logits=logits, labels=labels))
     return loss
 
 #######################################
