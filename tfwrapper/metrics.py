@@ -26,7 +26,7 @@ def binary_cross_entropy_loss(y_true, y_pred):
 ################################
 #      Dice coefficient        #
 ################################
-def dice_coefficient(y_true, y_pred, delta = 0.5, smooth = 0.000001):
+def dice_coefficient(delta = 0.5, smooth = 0.000001):
     """
     Parameters
     ----------
@@ -34,31 +34,43 @@ def dice_coefficient(y_true, y_pred, delta = 0.5, smooth = 0.000001):
         controls weight given to false positive and false negatives, by default 0.5
     smooth : float, optional
         smoothing constant to prevent division by zero errors, by default 0.000001
-    """   
-    axis = identify_axis(y_true.get_shape())
-    tp = tf.math.reduce_sum(y_true * y_pred, axis=axis)
-    fn = tf.math.reduce_sum(y_true * (1-y_pred), axis=axis)
-    fp = tf.math.reduce_sum((1-y_true) * y_pred, axis=axis)
-    # Calculate Dice score
-    dice_class = (tp + smooth)/(tp + delta*fn + (1-delta)*fp + smooth)
-    # Average class scores
-    dice = tf.math.reduce_mean(dice_class)
+    """
+    def loss_function(y_true, y_pred):
+	axis = identify_axis(y_true.get_shape())
+	tp = tf.math.reduce_sum(y_true * y_pred, axis=axis)
+	fn = tf.math.reduce_sum(y_true * (1-y_pred), axis=axis)
+	fp = tf.math.reduce_sum((1-y_true) * y_pred, axis=axis)
+	# Calculate Dice score
+	dice_class = (tp + smooth)/(tp + delta*fn + (1-delta)*fp + smooth)
+	# Average class scores
+	dice = tf.math.reduce_mean(dice_class)
 
-    return dice
+	return dice
+    return loss_function
 
 
 ################################
 #           Dice loss          #
 ################################
-def dice_loss(y_true, y_pred, delta = 0.5, smooth = 0.000001):
+def dice_loss(delta = 0.5, smooth = 0.000001):
     
-    return 1-dice_coefficient(y_true, y_pred)
-
+    def loss_function(y_true, y_pred):
+	axis = identify_axis(y_true.get_shape())
+	tp = tf.math.reduce_sum(y_true * y_pred, axis=axis)
+	fn = tf.math.reduce_sum(y_true * (1-y_pred), axis=axis)
+	fp = tf.math.reduce_sum((1-y_true) * y_pred, axis=axis)
+	# Calculate Dice score
+	dice_class = (tp + smooth)/(tp + delta*fn + (1-delta)*fp + smooth)
+	# Average class scores
+	dice_loss = tf.math.reduce_mean(1-dice_class)
+    
+        return dice_loss
+    return loss_function
 
 ################################
 #         Tversky loss         #
 ################################
-def tversky_loss(y_true, y_pred, delta = 0.7, smooth = 0.000001):
+def tversky_loss(delta = 0.7, smooth = 0.000001):
     """Tversky loss function
     Parameters
     ----------
@@ -68,45 +80,47 @@ def tversky_loss(y_true, y_pred, delta = 0.7, smooth = 0.000001):
     smooth : float, optional
         smoothing constant to prevent division by zero errors, by default 0.000001
     """    
-    axis = identify_axis(y_true.get_shape())
-    # Calculate true positives (tp), false negatives (fn) and false positives (fp)   
-    tp = tf.math.reduce_sum(y_true * y_pred, axis=axis)
-    fn = tf.math.reduce_sum(y_true * (1-y_pred), axis=axis)
-    fp = tf.math.reduce_sum((1-y_true) * y_pred, axis=axis)
-    tversky_class = (tp + smooth)/(tp + delta*fn + (1-delta)*fp + smooth)
-    # Average class scores
-    tversky_loss = tf.math.reduce_mean(1-tversky_class)
-    
-    return tversky_loss
+    def loss_function(y_true, y_pred):
+	axis = identify_axis(y_true.get_shape())
+	# Calculate true positives (tp), false negatives (fn) and false positives (fp)   
+	tp = tf.math.reduce_sum(y_true * y_pred, axis=axis)
+	fn = tf.math.reduce_sum(y_true * (1-y_pred), axis=axis)
+	fp = tf.math.reduce_sum((1-y_true) * y_pred, axis=axis)
+	tversky_class = (tp + smooth)/(tp + delta*fn + (1-delta)*fp + smooth)
+	# Average class scores
+	tversky_loss = tf.math.reduce_mean(1-tversky_class)
 
+	return tversky_loss
+    return loss_function
 
 ################################
 #      Focal Tversky loss      #
 ################################
-def focal_tversky_loss(y_true, y_pred, delta=0.7, gamma=0.75, smooth=0.000001):
+def focal_tversky_loss(delta=0.7, gamma=0.75, smooth=0.000001):
     """Focal Tversky loss
     Parameters
     ----------
     gamma : float, optional
         focal parameter controls degree of down-weighting of easy examples, by default 0.75
     """
-    epsilon = backend.epsilon()
-    y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
-    axis = identify_axis(y_true.get_shape())
-    tp = tf.math.reduce_sum(y_true * y_pred, axis=axis)
-    fn = tf.math.reduce_sum(y_true * (1-y_pred), axis=axis)
-    fp = tf.math.reduce_sum((1-y_true) * y_pred, axis=axis)
-    tversky_class = (tp + smooth)/(tp + delta*fn + (1-delta)*fp + smooth)
-    # Average class scores
-    focal_tversky_loss = tf.math.reduce_mean(tf.math.pow((1-tversky_class), gamma))
+    def loss_function(y_true, y_pred):
+	epsilon = backend.epsilon()
+	y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
+	axis = identify_axis(y_true.get_shape())
+	tp = tf.math.reduce_sum(y_true * y_pred, axis=axis)
+	fn = tf.math.reduce_sum(y_true * (1-y_pred), axis=axis)
+	fp = tf.math.reduce_sum((1-y_true) * y_pred, axis=axis)
+	tversky_class = (tp + smooth)/(tp + delta*fn + (1-delta)*fp + smooth)
+	# Average class scores
+	focal_tversky_loss = tf.math.reduce_mean(tf.math.pow((1-tversky_class), gamma))
 
-    return focal_tversky_loss
-
+	return focal_tversky_loss
+    return loss_function
 
 ################################
 #          Focal loss          #
 ################################
-def focal_loss(y_true, y_pred, alpha=None, beta=None, gamma_f=2.):
+def focal_loss(alpha=None, beta=None, gamma_f=2.):
     """Focal loss
     Parameters
     ----------
@@ -117,29 +131,31 @@ def focal_loss(y_true, y_pred, alpha=None, beta=None, gamma_f=2.):
     gamma_f : float, optional
         focal parameter controls degree of down-weighting of easy examples, by default 2.
     """
-    axis = identify_axis(y_true.get_shape())
-    epsilon = backend.epsilon()
-    y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
-    cross_entropy = -y_true * tf.math.log(y_pred)
-    if beta is not None:
-        beta_weight = np.array([beta, 1-beta])
-        cross_entropy = beta_weight * cross_entropy
+    def loss_function(y_true, y_pred):
+	axis = identify_axis(y_true.get_shape())
+	epsilon = backend.epsilon()
+	y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
+	cross_entropy = -y_true * tf.math.log(y_pred)
+	if beta is not None:
+	beta_weight = np.array([beta, 1-beta])
+	cross_entropy = beta_weight * cross_entropy
 
-    if alpha is not None:
-        alpha_weight = np.array(alpha, dtype=np.float32)
-        focal_loss = alpha_weight * tf.math.pow(1 - y_pred, gamma_f) * cross_entropy
-    else:
-        focal_loss = K.pow(1 - y_pred, gamma_f) * cross_entropy
+	if alpha is not None:
+	alpha_weight = np.array(alpha, dtype=np.float32)
+	focal_loss = alpha_weight * tf.math.pow(1 - y_pred, gamma_f) * cross_entropy
+	else:
+	focal_loss = K.pow(1 - y_pred, gamma_f) * cross_entropy
 
-    focal_loss = tf.math.reduce_mean(tf.math.reduce_sum(focal_loss, axis=[-1]))
-    
-    return focal_loss
+	focal_loss = tf.math.reduce_mean(tf.math.reduce_sum(focal_loss, axis=[-1]))
+
+	return focal_loss
+    return loss_function
 
 
 ################################
 #       Hybrid Focal loss      #
 ################################
-def hybrid_focal_loss(y_true, y_pred, weight=None, alpha=None, beta=None, gamma=0.75, gamma_f=2.):
+def hybrid_focal_loss(weight=None, alpha=None, beta=None, gamma=0.75, gamma_f=2.):
     """Default is the linear unweighted sum of the Focal loss and Focal Tversky loss
     Parameters
     ----------
@@ -154,21 +170,21 @@ def hybrid_focal_loss(y_true, y_pred, weight=None, alpha=None, beta=None, gamma=
     gamma_f : float, optional
         Focal loss' focal parameter controls degree of down-weighting of easy examples, by default 2.
     """
-    focal_tversky = focal_tversky_loss(y_true, y_pred, gamma=gamma)
-    focal = focal_loss(y_true, y_pred, alpha=alpha, beta=beta, gamma_f=gamma_f)
-    # return weighted sum of Focal loss and Focal Dice loss
-    if weight is not None:
-        return (weight * focal_tversky) + ((1-weight) * focal)  
-    else:
-        return focal_tversky + focal
+    def loss_function(y_true,y_pred):
+	focal_tversky = focal_tversky_loss(y_true, y_pred, gamma=gamma)
+	focal = focal_loss(y_true, y_pred, alpha=alpha, beta=beta, gamma_f=gamma_f)
+	# return weighted sum of Focal loss and Focal Dice loss
+	if weight is not None:
+	return (weight * focal_tversky) + ((1-weight) * focal)  
+	else:
+	return focal_tversky + focal
 
     return loss_function
-
 
 ################################
 #     Asymmetric Focal loss    #
 ################################
-def asymmetric_focal_loss(y_true, y_pred, delta=0.25, gamma=2.):
+def asymmetric_focal_loss(delta=0.25, gamma=2.):
     """For Imbalanced datasets
     Parameters
     ----------
@@ -177,27 +193,28 @@ def asymmetric_focal_loss(y_true, y_pred, delta=0.25, gamma=2.):
     gamma : float, optional
         Focal Tversky loss' focal parameter controls degree of down-weighting of easy examples, by default 2.0
     """
-    axis = identify_axis(y_true.get_shape())  
-    epsilon = backend.epsilon()
-    y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
-    cross_entropy = -y_true * tf.math.log(y_pred)
+    def loss_function(y_true, y_pred):
+	axis = identify_axis(y_true.get_shape())  
+	epsilon = backend.epsilon()
+	y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
+	cross_entropy = -y_true * tf.math.log(y_pred)
 
 	#calculate losses separately for each class, only suppressing background class
-    back_ce = tf.math.pow(1 - y_pred[:,:,:,0], gamma) * cross_entropy[:,:,:,0]
-    back_ce =  (1 - delta) * back_ce
+	back_ce = tf.math.pow(1 - y_pred[:,:,:,0], gamma) * cross_entropy[:,:,:,0]
+	back_ce =  (1 - delta) * back_ce
 
-    fore_ce = cross_entropy[:,:,:,1]
-    fore_ce = delta * fore_ce
+	fore_ce = cross_entropy[:,:,:,1]
+	fore_ce = delta * fore_ce
 
-    loss = tf.math.reduce_mean(tf.math.reduce_sum(tf.stack([back_ce, fore_ce],axis=-1),axis=-1))
-
-    return loss
+	loss = tf.math.reduce_mean(tf.math.reduce_sum(tf.stack([back_ce, fore_ce],axis=-1),axis=-1))
+	return loss
+    return loss_function
 
 
 #################################
 # Asymmetric Focal Tversky loss #
 #################################
-def asymmetric_focal_tversky_loss(y_true, y_pred, delta=0.7, gamma=0.75, smooth=0.000001):
+def asymmetric_focal_tversky_loss(delta=0.7, gamma=0.75, smooth=0.000001):
     """This is the implementation for binary segmentation.
     Parameters
     ----------
@@ -209,29 +226,31 @@ def asymmetric_focal_tversky_loss(y_true, y_pred, delta=0.7, gamma=0.75, smooth=
     smooth : float, optional
         smooithing constant to prevent division by 0 errors, by default 0.000001
     """
-    epsilon = backend.epsilon()
-    y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
+    def loss_function(y_true, y_pred):
+	epsilon = backend.epsilon()
+	y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
 
-    axis = identify_axis(y_true.get_shape())
-    # Calculate true positives (tp), false negatives (fn) and false positives (fp)     
-    tp = tf.math.reduce_sum(y_true * y_pred, axis=axis)
-    fn = tf.math.reduce_sum(y_true * (1-y_pred), axis=axis)
-    fp = tf.math.reduce_sum((1-y_true) * y_pred, axis=axis)
-    dice_class = (tp + epsilon)/(tp + delta*fn + (1-delta)*fp + epsilon)
+	axis = identify_axis(y_true.get_shape())
+	# Calculate true positives (tp), false negatives (fn) and false positives (fp)     
+	tp = tf.math.reduce_sum(y_true * y_pred, axis=axis)
+	fn = tf.math.reduce_sum(y_true * (1-y_pred), axis=axis)
+	fp = tf.math.reduce_sum((1-y_true) * y_pred, axis=axis)
+	dice_class = (tp + epsilon)/(tp + delta*fn + (1-delta)*fp + epsilon)
 
-    #calculate losses separately for each class, only enhancing foreground class
-    back_dice = (1-dice_class[:,0]) 
-    fore_dice = (1-dice_class[:,1]) * tf.math.pow(1-dice_class[:,1], -gamma) 
+	#calculate losses separately for each class, only enhancing foreground class
+	back_dice = (1-dice_class[:,0]) 
+	fore_dice = (1-dice_class[:,1]) * tf.math.pow(1-dice_class[:,1], -gamma) 
 
-    # Average class scores
-    loss = tf.math.reduce_mean(tf.stack([back_dice,fore_dice],axis=-1))
-    return loss
+	# Average class scores
+	loss = tf.math.reduce_mean(tf.stack([back_dice,fore_dice],axis=-1))
+	return loss
+    return loss_function
 
 
 ################################
 #      Unified Focal loss      #
 ################################
-def unified_focal_loss(y_true, y_pred, weight=0.5, delta=0.6, gamma=0.2):
+def unified_focal_loss(weight=0.5, delta=0.6, gamma=0.2):
     """The Unified Focal loss is a new compound loss function that unifies Dice-based and cross entropy-based loss functions into a single framework.
     Parameters
     ----------
@@ -242,13 +261,14 @@ def unified_focal_loss(y_true, y_pred, weight=0.5, delta=0.6, gamma=0.2):
     gamma : float, optional
         focal parameter controls the degree of background suppression and foreground enhancement, by default 0.2
     """
-    asymmetric_ftl = asymmetric_focal_tversky_loss(y_true, y_pred, delta=delta, gamma=gamma)
-    # Obtain Asymmetric Focal loss
-    asymmetric_fl = asymmetric_focal_loss(y_true, y_pred, delta=delta, gamma=gamma)
-    # return weighted sum of Asymmetrical Focal loss and Asymmetric Focal Tversky loss
-    if weight is not None:
-        return (weight * asymmetric_ftl) + ((1-weight) * asymmetric_fl)  
-    else:
-        return asymmetric_ftl + asymmetric_fl
+    def loss_function(y_true,y_pred):
+	asymmetric_ftl = asymmetric_focal_tversky_loss(y_true, y_pred, delta=delta, gamma=gamma)
+	# Obtain Asymmetric Focal loss
+	asymmetric_fl = asymmetric_focal_loss(y_true, y_pred, delta=delta, gamma=gamma)
+	# return weighted sum of Asymmetrical Focal loss and Asymmetric Focal Tversky loss
+	if weight is not None:
+	return (weight * asymmetric_ftl) + ((1-weight) * asymmetric_fl)  
+	else:
+	return asymmetric_ftl + asymmetric_fl
 
     return loss_function
