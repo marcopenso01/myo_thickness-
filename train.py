@@ -13,8 +13,7 @@ import glob
 import matplotlib.pyplot as plt
 from packaging import version
 from tensorflow.keras import Model, layers
-from tensorflow.keras import backend as K
-
+from tfwrapper import metrics
 import utils
 import model as model
 import configuration as config
@@ -70,13 +69,14 @@ def run_training(continue_run):
         logging.info('!!!!!!!!!!!!!!!!!!!!!!!!!!!! Continuing previous run !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
         try:
             
-            
+            init_epoch = last_epoch + 1
         except:
             logging.warning('!!! Didnt find init checkpoint. Maybe first run failed. Disabling continue mode...')
             continue_run = False
             init_step = 0   
     
     elif continue_run == False:
+        
         step = init_step
         curr_lr = config.learning_rate
         init_epoch = 0
@@ -94,10 +94,15 @@ def run_training(continue_run):
         # Build a model
         model = model_zoo.get_model(images_train, nlabels, config)
         model.summary()
+        
+        logging.info('compiling model...')
+        model.compile(optimizer=Adam(lr=curr_lr),
+                      loss=metrics.unified_focal_loss, 
+                      metrics=metrics.dice_coefficient)
+        
+        for epoch in range(init_epoch, config.max_epochs):
 
-        for epoch in range(config.max_epochs):
-
-            logging.info('EPOCH %d' % epoch)
+            logging.info('EPOCH %d/%d' % (epoch, config.max_epochs)
             
             train_temp = []
             val_temp = []
@@ -106,10 +111,9 @@ def run_training(continue_run):
                                              labels_train,
                                              batch_size=config.batch_size,
                                              augment_batch=config.augment_batch):
-
+                
                 start_time = time.time()
-
-                # batch = bgn_train.retrieve()
+                         
                 x, y = batch
 
                 # TEMPORARY HACK (to avoid incomplete batches)
@@ -117,15 +121,9 @@ def run_training(continue_run):
                     step += 1
                     continue
 
-                feed_dict = {
-                    images_pl: x,
-                    labels_pl: y,
-                    learning_rate_pl: curr_lr,
-                    training_pl: True
-                }
+                hist = model.train_on_batch(x,y)
 
-
-                _, loss_value = sess.run([train_op, loss], feed_dict=feed_dict)
+                loss_value, _ = hist
 
                 duration = time.time() - start_time
 
@@ -133,11 +131,6 @@ def run_training(continue_run):
                 if step % 20 == 0:
                     # Print status to stdout.
                     logging.info('Step %d: loss = %.3f (%.3f sec)' % (step, loss_value, duration))
-                    # Update the events file.
-
-                    summary_str = sess.run(summary, feed_dict=feed_dict)
-                    summary_writer.add_summary(summary_str, step)
-                    summary_writer.flush()
                 
                 if (step + 1) % config.train_eval_frequency == 0:
 
