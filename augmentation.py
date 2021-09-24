@@ -44,6 +44,20 @@ def augmentation_function(images, labels):
                     img = image_utils.rotate_image(img, random_angle)
                     lbl = image_utils.rotate_image(lbl, random_angle, interp=cv2.INTER_NEAREST)
             
+            # FLIP Lelf/Right
+            if do_fliplr:
+                coin_flip = np.random.randint(2)
+                if coin_flip == 0:
+                    img = np.fliplr(img)
+                    lbl = np.fliplr(lbl)
+                
+            # FLIP  up/down
+            if do_flipud:
+                coin_flip = np.random.randint(2)
+                if coin_flip == 0:
+                    img = np.flipud(img)
+                    lbl = np.flipud(lbl)
+                    
             # RANDOM GAMMA CORRECTION
             if do_gamma:
                 coin_flip = np.random.randint(2)
