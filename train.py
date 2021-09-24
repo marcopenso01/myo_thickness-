@@ -10,6 +10,7 @@ import os
 import numpy as np
 import logging
 import glob
+import math
 import matplotlib.pyplot as plt
 from packaging import version
 from tensorflow.keras import Model, layers
@@ -82,7 +83,7 @@ def run_training(continue_run):
         init_epoch = 0
         
         no_improvement_counter = 0
-        best_val = np.inf
+        best_loss = np.inf
         last_train = np.inf
         best_dice = 0
         train_loss_history = []
@@ -105,7 +106,6 @@ def run_training(continue_run):
             logging.info('EPOCH %d/%d' % (epoch, config.max_epochs)
             
             train_temp = []
-            val_temp = []
 
             for batch in iterate_minibatches(images_train,
                                              labels_train,
@@ -121,10 +121,9 @@ def run_training(continue_run):
                     step += 1
                     continue
 
-                hist = model.train_on_batch(x,y)
-
-                loss_value, _ = hist
-
+                [loss_value, dice_value] = model.train_on_batch(x,y)
+                
+                train_temp.append([loss_value, dice_value])
                 duration = time.time() - start_time
 
                 # Write the summaries and print an overview fairly often.
@@ -132,88 +131,31 @@ def run_training(continue_run):
                     # Print status to stdout.
                     logging.info('Step %d: loss = %.3f (%.3f sec)' % (step, loss_value, duration))
                 
-                if (step + 1) % config.train_eval_frequency == 0:
-
-                    logging.info('Training Data Eval:')
-                    [train_loss, train_dice] = do_eval(sess,
-                                                       eval_loss,
-                                                       images_pl,
-                                                       labels_pl,
-                                                       training_pl,
-                                                       images_train,
-                                                       labels_train,
-                                                       config.batch_size)
-
-                    train_summary_msg = sess.run(train_summary, feed_dict={train_error_: train_loss,
-                                                                           train_dice_: train_dice}
-                                                 )
-                    summary_writer.add_summary(train_summary_msg, step)
-
-                    train_temp.append([train_loss, train_dice])
+                if config.adaptive_decay:
+                    if (step + 1) % config.train_eval_frequency == 0:
+                        logging.info('Training Data Eval:')
+                        [train_loss, train_dice] = do_eval(images_train,
+                                                           labels_train,
+                                                           batch_size=config.batch_size,
+                                                           augment_batch=False)
                     
-                    curr_lr = config.learning_rate * train_loss
-                    logging.info('Learning rate change to: %f' % curr_lr)
-                    
-                    if train_loss < last_train:  # best_train found:
-                        no_improvement_counter = 0
-                        logging.info('Decrease in training error!')
-                    else:
-                        no_improvement_counter = no_improvement_counter+1
-                        logging.info('No improvment in training error for %d steps' % no_improvement_counter)
-
-                    last_train = train_loss
-
-                # Save a checkpoint and evaluate the model periodically.
-                if (step + 1) % config.val_eval_frequency == 0:
-
-                    checkpoint_file = os.path.join(log_dir, 'model.ckpt')
-                    filelist = glob.glob(os.path.join(log_dir, 'model.ckpt*'))
+                        curr_lr = config.learning_rate * train_loss
+                        logging.info('Learning rate change to: %f' % curr_lr)
+            
+            
+                #fine batch
+                step += 1
+        
+            # end epoch
+            # Save a checkpoint and evaluate the model periodically.
+            if (step + 1) % config.val_eval_frequency == 0:
+                    filelist = glob.glob(os.path.join(log_dir, 'checkpoint*'))
                     for file in filelist:
                         os.remove(file)
-                    saver.save(sess, checkpoint_file, global_step=step)
-                    # Evaluate against the training set.
-
-                    if not train_on_all_data:
-
-                        # Evaluate against the validation set.
-                        logging.info('Validation Data Eval:')
-                        [val_loss, val_dice] = do_eval(sess,
-                                                       eval_loss,
-                                                       images_pl,
-                                                       labels_pl,
-                                                       training_pl,
-                                                       images_val,
-                                                       labels_val,
-                                                       config.batch_size)
-                        
-                        val_temp.append([val_loss, val_dice])
-                        val_summary_msg = sess.run(val_summary, feed_dict={val_error_: val_loss, val_dice_: val_dice}
-                        )
-                        summary_writer.add_summary(val_summary_msg, step)
-
-                        if val_dice > best_dice:
-                            best_dice = val_dice
-                            best_file = os.path.join(log_dir, 'model_best_dice.ckpt')
-                            filelist = glob.glob(os.path.join(log_dir, 'model_best_dice*'))
-                            for file in filelist:
-                                os.remove(file)
-                            saver_best_dice.save(sess, best_file, global_step=step)
-                            logging.info('Found new best dice on validation set! - %f -  Saving model_best_dice.ckpt' % val_dice)
-
-                        if val_loss < best_val:
-                            best_val = val_loss
-                            best_file = os.path.join(log_dir, 'model_best_loss.ckpt')
-                            filelist = glob.glob(os.path.join(log_dir, 'model_best_loss*'))
-                            for file in filelist:
-                                os.remove(file)
-                            saver_best_loss.save(sess, best_file, global_step=step)
-                            logging.info('Found new best loss on validation set! - %f -  Saving model_best_loss.ckpt' % val_loss)
-
-                step += 1
-                
-            # end epoch
+                    model.save(os.path.join(log_dir, ('checkpoint' + '_epoch_' + str(epoch) + '_step_' + str(step) + 
+                                                      '_loss_' + str(best_loss) + '_dice_' + str(best_dice) + '.h5')))
+            # Training Data Eval          
             if len(train_temp)!=0:
-                lr_history.append(curr_lr)
                 sum_dice = 0
                 sum_loss = 0
                 for i in range(len(train_temp)):
@@ -221,15 +163,55 @@ def run_training(continue_run):
                     sum_dice += train_temp[i][1]
                 train_loss_history.append(sum_loss/len(train_temp))
                 train_dice_history.append(sum_dice/len(train_temp))
-                sum_dice = 0
-                sum_loss = 0
-                for i in range(len(val_temp)):
-                    sum_loss += val_temp[i][0]
-                    sum_dice += val_temp[i][1]
-                val_loss_history.append(sum_loss/len(val_temp))
-                val_dice_history.append(sum_dice/len(val_temp))
-            
-        sess.close()
+
+            # Validation Data Eval
+            if not train_on_all_data:
+                logging.info('Validation Data Eval:')
+                [val_loss, val_dice] = do_eval(images_val,
+                                               labels_val,
+                                               batch_size=config.batch_size,
+                                               augment_batch=False)
+                val_loss_history.append(val_loss)
+                val_dice_history.append(val_dice)
+
+                if val_dice > best_dice:
+                    logging.info('Found new best dice on validation set! - %f - saving model' % val_dice)
+                    best_dice = val_dice
+                    filelist = glob.glob(os.path.join(log_dir, 'model_best_dice*'))
+                    for file in filelist:
+                        os.remove(file)
+                    model.save(os.path.join(log_dir, 'model_best_dice.h5'))
+
+                if val_loss < best_loss:
+                    logging.info('Found new best loss on validation set! - %f - saving model' % val_loss)
+                    best_loss = val_loss
+                    filelist = glob.glob(os.path.join(log_dir, 'model_best_loss*'))
+                    for file in filelist:
+                        os.remove(file)
+                    model.save(os.path.join(log_dir, 'model_best_loss.h5'))
+
+            # Learning rate Eval       
+            lr_history.append(curr_lr)
+            # Decay learning rate
+            if config.time_decay:
+                #decay_rate = config.learning_rate / config.max_epochs
+                decay_rate = 1E-4
+                curr_lr *= (1. / (1. + decay_rate * epoch))
+                K.set_value(model.optimizer.learning_rate, curr_lr)
+            elif config.step_decay:
+                drop = 0.5
+                epochs_drop = 40.0
+                curr_lr = config.learning_rate * math.pow(drop,
+                          math.floor((1+epoch)/epochs_drop))
+                K.set_value(model.optimizer.learning_rate, curr_lr)
+            elif config.exp_decay:
+                qq = 0.01
+                curr_lr = config.learning_rate * math.exp(-qq*epoch)
+                K.set_value(model.optimizer.learning_rate, curr_lr)
+            elif config.adaptive_decay:
+                curr_lr = config.learning_rate * temp_hist['loss']
+                K.set_value(model.optimizer.learning_rate, curr_lr)
+                         
         
         #plot history (loss, dice, lr)
         plt.figure()
