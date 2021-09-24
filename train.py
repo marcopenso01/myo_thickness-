@@ -110,6 +110,8 @@ def run_training(continue_run):
         # Build a model
         model = model_zoo.get_model(images_train, nlabels, config)
         model.summary()
+        with open(logdir + 'summary_report.txt','a') as fh:
+            model.summary(print_fn=lambda x: fh.write(x + '\n'))
         
         logging.info('compiling model...')
         print_txt(log_dir, ['\ncompiling model...'])
