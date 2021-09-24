@@ -15,23 +15,17 @@ def makefolder(folder):
     return False
 
 
-def get_latest_model_checkpoint_path(folder, name):
+def get_latest_model_checkpoint_path(folder):
     '''
-    Returns the checkpoint with the highest iteration number with a given name
     :param folder: Folder where the checkpoints are saved
-    :param name: Name under which you saved the model
-    :return: The path to the checkpoint with the latest iteration
+    :return: The model of the latest iteration
     '''
+    for file in glob.glob(os.path.join(folder, 'checkpoint*.h5')):
 
-    iteration_nums = []
-    for file in glob.glob(os.path.join(folder, '%s*.meta' % name)):
+        filename = file.split('/')[-1]
+        epoch = filename.split('_')[2]
+        step = filename.split('_')[4]
+        loss = filename.split('_')[6]
+        dice = filename.split('_')[8].split('.h5')[0]
 
-        file = file.split('/')[-1]
-        file_base, postfix_and_number, rest = file.split('.')[0:3]
-        it_num = int(postfix_and_number.split('-')[-1])
-
-        iteration_nums.append(it_num)
-
-    latest_iteration = np.max(iteration_nums)
-
-    return os.path.join(folder, name + '-' + str(latest_iteration))
+    return filename, int(epoch), int(step), float(loss), float(dice)
