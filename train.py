@@ -113,9 +113,29 @@ def run_training(continue_run):
         
         logging.info('compiling model...')
         print_txt(log_dir, ['\ncompiling model...'])
+        
+        if config.loss_type == 'binary_crossentropy':
+            loss = metrics.binary_cross_entropy_loss()
+        elif config.loss_type == 'dice':
+            loss = metrics.dice_loss(delta = 0.5)
+        elif config.loss_type == 'tversky':
+            loss = metrics.tversky_loss(delta = 0.7)
+        elif config.loss_type == 'focal_tversky':
+            loss = metrics.focal_tversky_loss(delta=0.7, gamma=0.75)
+        elif config.loss_type == 'focal_loss':
+            loss = metrics.focal_loss(alpha=None, beta=None, gamma_f=2.)
+        elif config.loss_type == 'hybrid_focal':
+            loss = metrics.hybrid_focal_loss(weight=None, alpha=None, beta=None, gamma=0.75, gamma_f=2.)
+        elif config.loss_type == 'asymmetric_focal':
+            loss = metrics.asymmetric_focal_loss(delta=0.25, gamma=2.)
+        elif config.loss_type == 'asymmetric_focal_tversky':
+            loss = metrics.asymmetric_focal_tversky_loss(delta=0.7, gamma=0.75)
+        elif config.loss_type == 'unified_focal':
+            loss = metrics.unified_focal_loss(weight=0.5, delta=0.6, gamma=0.2)
+            
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=curr_lr),
-                      loss=metrics.unified_focal_loss, 
-                      metrics=metrics.dice_coefficient)
+                      loss=loss, 
+                      metrics=metrics.dice_coefficient())
     
     step = init_step
     no_improvement_counter = 0
