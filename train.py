@@ -34,8 +34,7 @@ assert version.parse(tf.__version__).release[0] >= 2, \
 def run_training(continue_run):
 
     logging.info('EXPERIMENT NAME: %s' % config.experiment_name)
-
-    init_step = 0
+    print_txt(log_dir, ['\nEXPERIMENT NAME: %s' % config.experiment_name])
 
     # Load data train
     data = h5py.File(os.path.join(config.data_root, 'train.hdf5'), 'r')
@@ -63,203 +62,226 @@ def run_training(continue_run):
         logging.info(images_val.shape)
         logging.info(images_val.dtype)
     
+    print_txt(log_dir, ['\nData summary:'])
+    print_txt(log_dir, ['\n - Training Images:\n'])
+    print_txt(log_dir, str(images_train.shape))
+    print_txt(path, ['\n'])
+    print_txt(log_dir, str(images_train.dtype))
+    print_txt(log_dir, ['\n - Training Labels:\n'])
+    print_txt(log_dir, str(labels_train.shape))
+    print_txt(path, ['\n'])
+    print_txt(log_dir, str(labels_train.dtype))
+    if not train_on_all_data:
+        print_txt(log_dir, ['\n - Validation Images:\n'])
+        print_txt(log_dir, str(images_val.shape))
+        print_txt(path, ['\n'])
+        print_txt(log_dir, str(images_val.dtype))
+    
     nlabels = config.nlabels
     
     #restore previous session
     if continue_run:
         logging.info('!!!!!!!!!!!!!!!!!!!!!!!!!!!! Continuing previous run !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
         try:
-            
-            init_epoch = last_epoch + 1
+            filename, last_epoch, last_step, best_loss, best_dice = utils.get_latest_model_checkpoint_path(log_dir)
+            logging.info('loading model...')
+            print_txt(log_dir, ['\nloading model...'])
+            model = load_model(os.path.join(log_dir, filename))
+            logging.info('Latest epoch was: %d' % last_epoch)
+            print_txt(log_dir, ['\nLatest epoch was: %d' % last_epoch])
+            logging.info('Latest step was: %d' % last_step)
+            print_txt(log_dir, ['\nLatest step was: %d' % last_step])
+            init_epoch = last_epoch + 1 #plus 1 otherwise repeats last epoch
+            init_step = last_step + 1
+            curr_lr = model.optimizer.learning_rate.numpy()
         except:
             logging.warning('!!! Didnt find init checkpoint. Maybe first run failed. Disabling continue mode...')
+            print_txt(log_dir, ['\n!!! Didnt find init checkpoint. Maybe first run failed. Disabling continue mode...'])
             continue_run = False
-            init_step = 0   
-    
-    elif continue_run == False:
+            
+    if not continue_run:
         
-        step = init_step
-        curr_lr = config.learning_rate
         init_epoch = 0
-        
-        no_improvement_counter = 0
+        init_step = 0 
         best_loss = np.inf
-        last_train = np.inf
         best_dice = 0
-        train_loss_history = []
-        val_loss_history = []
-        train_dice_history = []
-        val_dice_history = []
-        lr_history = []
+        curr_lr = config.learning_rate
         
         # Build a model
         model = model_zoo.get_model(images_train, nlabels, config)
         model.summary()
         
         logging.info('compiling model...')
-        model.compile(optimizer=Adam(lr=curr_lr),
+        print_txt(log_dir, ['\ncompiling model...'])
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=curr_lr),
                       loss=metrics.unified_focal_loss, 
                       metrics=metrics.dice_coefficient)
+    
+    step = init_step
+    no_improvement_counter = 0
+    last_train = np.inf
+    train_loss_history = []
+    val_loss_history = []
+    train_dice_history = []
+    val_dice_history = []
+    lr_history = []
         
-        for epoch in range(init_epoch, config.max_epochs):
+    for epoch in range(init_epoch, config.max_epochs):
 
-            logging.info('EPOCH %d/%d' % (epoch, config.max_epochs)
-            
-            train_temp = []
+        logging.info('EPOCH %d/%d' % (epoch, config.max_epochs))
+        print_txt(log_dir, ['\nEPOCH %d/%d' % (epoch, config.max_epochs)])
 
-            for batch in iterate_minibatches(images_train,
-                                             labels_train,
-                                             batch_size=config.batch_size,
-                                             augment_batch=config.augment_batch):
-                
-                start_time = time.time()
-                         
-                x, y = batch
+        train_temp = []
 
-                # TEMPORARY HACK (to avoid incomplete batches)
-                if y.shape[0] < config.batch_size:
-                    step += 1
-                    continue
+        for batch in iterate_minibatches(images_train,
+                                         labels_train,
+                                         batch_size=config.batch_size,
+                                         augment_batch=config.augment_batch):
 
-                [loss_value, dice_value] = model.train_on_batch(x,y)
-                
-                train_temp.append([loss_value, dice_value])
-                duration = time.time() - start_time
+            start_time = time.time()
 
-                # Write the summaries and print an overview fairly often.
-                if step % 20 == 0:
-                    # Print status to stdout.
-                    logging.info('Step %d: loss = %.3f (%.3f sec)' % (step, loss_value, duration))
-                
-                if config.adaptive_decay:
-                    if (step + 1) % config.train_eval_frequency == 0:
-                        logging.info('Training Data Eval:')
-                        [train_loss, train_dice] = do_eval(images_train,
-                                                           labels_train,
-                                                           batch_size=config.batch_size,
-                                                           augment_batch=False)
-                    
-                        curr_lr = config.learning_rate * train_loss
-                        logging.info('Learning rate change to: %f' % curr_lr)
-            
-            
-                #fine batch
+            x, y = batch
+
+            # TEMPORARY HACK (to avoid incomplete batches)
+            if y.shape[0] < config.batch_size:
                 step += 1
+                continue
+
+            [loss_value, dice_value] = model.train_on_batch(x,y)
+
+            train_temp.append([loss_value, dice_value])
+            duration = time.time() - start_time
+
+            # Write the summaries and print an overview fairly often.
+            if step % 20 == 0:
+                # Print status to stdout.
+                logging.info('Epoch %d (Step %d): loss = %.3f - lr = %.6f (%.3f sec)' % (epoch, step, loss_value, curr_lr, duration))
+                print_txt(log_dir, ['\nEpoch %d (Step %d): loss = %.3f - lr = %.6f (%.3f sec)' % (epoch, step, loss_value, curr_lr, duration)])
+            '''
+            if config.adaptive_decay:
+                if (step + 1) % config.train_eval_frequency == 0:
+                    logging.info('Training Data Eval:')
+                    [train_loss, train_dice] = do_eval(images_train,
+                                                       labels_train,
+                                                       batch_size=config.batch_size,
+                                                       augment_batch=False)
+
+                    curr_lr = config.learning_rate * train_loss
+                    logging.info('Learning rate change to: %f' % curr_lr)
+            '''
+
+            # --- end batch ---
+            step += 1
+
+        # --- end epoch ---
+        # Training Data Eval          
+        if len(train_temp)!=0:
+            sum_dice = 0
+            sum_loss = 0
+            for i in range(len(train_temp)):
+                sum_loss += train_temp[i][0]
+                sum_dice += train_temp[i][1]
+            train_loss_history.append(sum_loss/len(train_temp))
+            train_dice_history.append(sum_dice/len(train_temp))
+
+        # Validation Data Eval
+        if not train_on_all_data:
+            logging.info('Validation Data Eval:')
+            print_txt(log_dir, ['\nValidation Data Eval:'])
+            [val_loss, val_dice] = do_eval(images_val,
+                                           labels_val,
+                                           batch_size=config.batch_size,
+                                           augment_batch=False)
+            val_loss_history.append(val_loss)
+            val_dice_history.append(val_dice)
+
+            if val_dice > best_dice:
+                logging.info('Found new best dice on validation set! - %f - saving model' % val_dice)
+                print_txt(log_dir, ['\nFound new best dice on validation set! - %f - saving model' % val_dice])
+                best_dice = val_dice
+                filelist = glob.glob(os.path.join(log_dir, 'model_best_dice*'))
+                for file in filelist:
+                    os.remove(file)
+                model.save(os.path.join(log_dir, 'model_best_dice.h5'))
+
+            if val_loss < best_loss:
+                logging.info('Found new best loss on validation set! - %f - saving model' % val_loss)
+                print_txt(log_dir, ['\nFound new best loss on validation set! - %f - saving model' % val_loss])
+                best_loss = val_loss
+                filelist = glob.glob(os.path.join(log_dir, 'model_best_loss*'))
+                for file in filelist:
+                    os.remove(file)
+                model.save(os.path.join(log_dir, 'model_best_loss.h5'))
+
+        # Save a checkpoint
+        if (step + 1) % config.val_eval_frequency == 0:
+            filelist = glob.glob(os.path.join(log_dir, 'checkpoint*'))
+            for file in filelist:
+                os.remove(file)
+            model.save(os.path.join(log_dir, ('checkpoint' + '_epoch_' + str(epoch) + '_step_' + str(step) + 
+                                              '_loss_' + str(best_loss) + '_dice_' + str(best_dice) + '.h5')))
         
-            # end epoch
-            # Save a checkpoint and evaluate the model periodically.
-            if (step + 1) % config.val_eval_frequency == 0:
-                    filelist = glob.glob(os.path.join(log_dir, 'checkpoint*'))
-                    for file in filelist:
-                        os.remove(file)
-                    model.save(os.path.join(log_dir, ('checkpoint' + '_epoch_' + str(epoch) + '_step_' + str(step) + 
-                                                      '_loss_' + str(best_loss) + '_dice_' + str(best_dice) + '.h5')))
-            # Training Data Eval          
-            if len(train_temp)!=0:
-                sum_dice = 0
-                sum_loss = 0
-                for i in range(len(train_temp)):
-                    sum_loss += train_temp[i][0]
-                    sum_dice += train_temp[i][1]
-                train_loss_history.append(sum_loss/len(train_temp))
-                train_dice_history.append(sum_dice/len(train_temp))
+        # Learning rate Eval       
+        lr_history.append(curr_lr)
+        # Decay learning rate
+        if config.time_decay:
+            #decay_rate = config.learning_rate / config.max_epochs
+            decay_rate = 1E-4
+            curr_lr *= (1. / (1. + decay_rate * epoch))
+            model.optimizer.learning_rate.assign(curr_lr)
+        elif config.step_decay:
+            drop = 0.5
+            epochs_drop = 40.0
+            curr_lr = config.learning_rate * math.pow(drop,
+                      math.floor((1+epoch)/epochs_drop))
+            model.optimizer.learning_rate.assign(curr_lr)
+        elif config.exp_decay:
+            qq = 0.01
+            curr_lr = config.learning_rate * math.exp(-qq*epoch)
+            model.optimizer.learning_rate.assign(curr_lr)
+        elif config.adaptive_decay:
+            curr_lr = config.learning_rate * val_loss
+            model.optimizer.learning_rate.assign(curr_lr)
+        else:
+            curr_lr = curr_lr * 0.985
+            model.optimizer.learning_rate.assign(curr_lr)
 
-            # Validation Data Eval
-            if not train_on_all_data:
-                logging.info('Validation Data Eval:')
-                [val_loss, val_dice] = do_eval(images_val,
-                                               labels_val,
-                                               batch_size=config.batch_size,
-                                               augment_batch=False)
-                val_loss_history.append(val_loss)
-                val_dice_history.append(val_dice)
+    # --- end training ---
+    #plot history (loss, metrics, lr)
+    logging.info('Saving plots...')
+    plt.figure()
+    plt.plot(train_loss_history, label='train_loss')
+    plt.plot(val_loss_history, label='val_loss')
+    plt.title('model loss')
+    plt.legend()
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
+    plt.savefig(os.path.join(log_dir,'loss.png'))
+    plt.figure()
+    plt.plot(train_dice_history, label='train_dice')
+    plt.plot(val_dice_history, label='val_dice')
+    plt.title('model dice')
+    plt.legend()
+    plt.xlabel('epoch')
+    plt.ylabel('dice')
+    plt.savefig(os.path.join(log_dir,'dice.png'))
+    plt.figure()
+    plt.plot(lr_history)
+    plt.title('model learning rate')
+    plt.xlabel('epoch')
+    plt.ylabel('learning rate')
+    plt.savefig(os.path.join(log_dir,'learning_rate.png')) 
+    logging.info('END')
 
-                if val_dice > best_dice:
-                    logging.info('Found new best dice on validation set! - %f - saving model' % val_dice)
-                    best_dice = val_dice
-                    filelist = glob.glob(os.path.join(log_dir, 'model_best_dice*'))
-                    for file in filelist:
-                        os.remove(file)
-                    model.save(os.path.join(log_dir, 'model_best_dice.h5'))
-
-                if val_loss < best_loss:
-                    logging.info('Found new best loss on validation set! - %f - saving model' % val_loss)
-                    best_loss = val_loss
-                    filelist = glob.glob(os.path.join(log_dir, 'model_best_loss*'))
-                    for file in filelist:
-                        os.remove(file)
-                    model.save(os.path.join(log_dir, 'model_best_loss.h5'))
-
-            # Learning rate Eval       
-            lr_history.append(curr_lr)
-            # Decay learning rate
-            if config.time_decay:
-                #decay_rate = config.learning_rate / config.max_epochs
-                decay_rate = 1E-4
-                curr_lr *= (1. / (1. + decay_rate * epoch))
-                K.set_value(model.optimizer.learning_rate, curr_lr)
-            elif config.step_decay:
-                drop = 0.5
-                epochs_drop = 40.0
-                curr_lr = config.learning_rate * math.pow(drop,
-                          math.floor((1+epoch)/epochs_drop))
-                K.set_value(model.optimizer.learning_rate, curr_lr)
-            elif config.exp_decay:
-                qq = 0.01
-                curr_lr = config.learning_rate * math.exp(-qq*epoch)
-                K.set_value(model.optimizer.learning_rate, curr_lr)
-            elif config.adaptive_decay:
-                curr_lr = config.learning_rate * temp_hist['loss']
-                K.set_value(model.optimizer.learning_rate, curr_lr)
-                         
-        
-        #plot history (loss, dice, lr)
-        plt.figure()
-        plt.plot(train_loss_history, label='train_loss')
-        plt.plot(val_loss_history, label='val_loss')
-        plt.title('model loss')
-        plt.legend()
-        plt.xlabel('epoch')
-        plt.ylabel('loss')
-        plt.show()
-        plt.figure()
-        plt.plot(train_dice_history, label='train_dice')
-        plt.plot(val_dice_history, label='val_dice')
-        plt.title('model dice')
-        plt.legend()
-        plt.xlabel('epoch')
-        plt.ylabel('dice')
-        plt.show()
-        plt.figure()
-        plt.plot(lr_history)
-        plt.title('model learning rate')
-        plt.xlabel('epoch')
-        plt.ylabel('learning rate')
-        plt.show() 
-
-
-def do_eval(sess,
-            eval_loss,
-            images_placeholder,
-            labels_placeholder,
-            training_time_placeholder,
-            images,
-            labels,
-            batch_size):
-
+def do_eval(images, labels, batch_size, augment_batch=False):
     '''
     Function for running the evaluations every X iterations on the training and validation sets. 
-    :param sess: The current tf session 
-    :param eval_loss: The placeholder containing the eval loss
-    :param images_placeholder: Placeholder for the images
-    :param labels_placeholder: Placeholder for the masks
-    :param training_time_placeholder: Placeholder toggling the training/testing mode. 
-    :param images: A numpy array or h5py dataset containing the images
-    :param labels: A numpy array or h5py dataset containing the corresponding labels 
-    :param batch_size: The batch_size to use. 
-    :return: The average loss (as defined in the experiment), and the average dice over all `images`. 
+    :param images: A numpy array containing the images
+    :param labels: A numpy array containing the corresponding labels 
+    :param batch_size: batch size
+    :param augment_batch: should batch be augmented?
+    :return: The average loss and the average dice over all `images`. 
     '''
-
     loss_ii = 0
     dice_ii = 0
     num_batches = 0
@@ -273,11 +295,8 @@ def do_eval(sess,
         if y.shape[0] < batch_size:
             continue
 
-        feed_dict = { images_placeholder: x,
-                      labels_placeholder: y,
-                      training_time_placeholder: False}
+        closs, cdice = model.test_on_batch(x,y)
 
-        closs, cdice = sess.run(eval_loss, feed_dict=feed_dict)
         loss_ii += closs
         dice_ii += cdice
         num_batches += 1
@@ -285,7 +304,8 @@ def do_eval(sess,
     avg_loss = loss_ii / num_batches
     avg_dice = dice_ii / num_batches
 
-    logging.info('  Average loss: %0.04f, average dice: %0.04f' % (avg_loss, avg_dice))
+    logging.info('Average loss: %0.04f, average dice: %0.04f' % (avg_loss, avg_dice))
+    print_txt(log_dir, ['\nAverage loss: %0.04f, average dice: %0.04f' % (avg_loss, avg_dice)])
 
     return avg_loss, avg_dice
 
@@ -293,8 +313,8 @@ def do_eval(sess,
 def iterate_minibatches(images, labels, batch_size, augment_batch=False):
     '''
     Function to create mini batches from the dataset of a certain batch size 
-    :param images: hdf5 dataset
-    :param labels: hdf5 dataset
+    :param images: tensor
+    :param labels: tensor
     :param batch_size: batch size
     :return: mini batches
     '''
@@ -309,7 +329,6 @@ def iterate_minibatches(images, labels, batch_size, augment_batch=False):
         if b_i + batch_size > n_images:
             continue
 
-        # HDF5 requires indices to be in increasing order
         batch_indices = np.sort(random_indices[b_i:b_i+batch_size])
 
         X = images[batch_indices, ...]
@@ -321,9 +340,14 @@ def iterate_minibatches(images, labels, batch_size, augment_batch=False):
         
         if augment_batch:
             X, y = aug.augmentation_function(X, y)
-
             
         yield X, y
+
+ 
+def print_txt(output_dir, stringa):
+    out_file = os.path.join(output_dir, 'summary_report.txt')
+    with open(out_file, "a") as text_file:
+        text_file.writelines(stringa)
 
 
 def main():
@@ -331,6 +355,11 @@ def main():
     continue_run = True
     if not tf.io.gfile.exists(log_dir):
         tf.io.gfile.makedirs(log_dir)
+        out_file = os.path.join(log_dir, 'summary_report.txt')
+        with open(out_file, "w") as text_file:
+            text_file.write('\n\n-------------------------------------------------------------------------------------\n')
+            text_file.write('Model summary\n')
+            text_file.write('-------------------------------------------------------------------------------------\n\n')
         continue_run = False
 
     # Copy experiment config file
