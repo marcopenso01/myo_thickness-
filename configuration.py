@@ -18,16 +18,20 @@ gt_exists = True    #True if it exists the ground_trth images, otherwise False.
 # Training settings
 batch_size = 4 
 learning_rate = 0.001
-optimizer_handle = tf.compat.v1.train.AdamOptimizer     #(beta1 = 0.9, beta2 = 0.999, epsilon=1e-08)
-schedule_lr = False       #decrease 10 times the LR when loss gradient lower than threshold
-weight_decay = 0 
-momentum = None
-loss_type = 
+loss_type = 'unified_focal'  #'binary_crossentropy' 'dice' 'tversky' 'focal_tversky' 'focal_loss' 'hybrid_focal' 'asymmetric_focal' 'asymmetric_focal_tversky' 'unified_focal'
 augment_batch = True
+
+# Decay Learning rate
+time_decay = False      #LearningRate = LearningRate * 1/(1 + decay * epoch)
+step_decay = False      #LearningRate = InitialLearningRate * DropRate^floor(epoch / epochDrop)
+exp_decay = False       #LearningRate = InitialLearningRate * exp^(-decay * epoch)
+adaptive_decay = True  #LearningRate = InitialLearningRate * loss_function
 
 # Augmentation settings
 do_rotation_range = True   #random rotation in range "rg" (min,max)
-rg = (-20,20)     
+rg = (0,359)
+do_fliplr = True           #Flip array in the left/right direction
+do_flipud = True           #Flip array in the up/down direction.
 gamma = True               #transforms the input image pixelwise according to the equation O = I**gamma
 prob = 1                   #Probability [0.0/1.0] (0 no augmentation, 1 always)
 
@@ -46,4 +50,3 @@ normalize = True
 max_epochs = 1000
 
 train_eval_frequency = 200
-val_eval_frequency = 150 
