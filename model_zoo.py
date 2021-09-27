@@ -63,4 +63,4 @@ def unet2D_same(input_tensor, nlabels):
 
 def get_model(images, nlabels, config):
     
-    return config.model_handle(images, nlabels, config)
+    return config.model_handle(images, nlabels)
