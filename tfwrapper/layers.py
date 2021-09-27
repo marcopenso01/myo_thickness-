@@ -33,7 +33,7 @@ def max_pool_layer3d(x, kernel_size=(2, 2, 2), strides=(2, 2, 2), padding="SAME"
 
     pool_size = (kernel_size[0], kernel_size[1], kernel_size[2])
     strides = (strides[0], strides[1], strides[2])
-    return = layers.MaxPool3D(pool_size=pool_size, strides=strides, padding=padding)(x)
+    return layers.MaxPool3D(pool_size=pool_size, strides=strides, padding=padding)(x)
 
 
 def dropout_layer(bottom, name, training, keep_prob=0.5):
@@ -51,7 +51,7 @@ def batch_normalisation_layer(bottom):
 
 
 def upsample(tensor, rate=2):
-    return layers.UpSampling2D(size(rate,rate), interpolation='nearest')(tensor)
+    return layers.UpSampling2D(size=(rate,rate), interpolation='nearest')(tensor)
 
 
 ### FEED_FORWARD LAYERS ##############################################################################
@@ -182,7 +182,6 @@ def deconv2D_layer(bottom,
                    kernel_size=(4, 4),
                    num_filters=32,
                    strides=(2, 2),
-                   output_shape=None,
                    activation='relu',
                    padding="SAME",
                    weight_init='he_normal',
@@ -200,7 +199,6 @@ def deconv3D_layer(bottom,
                    kernel_size=(4, 4, 4),
                    num_filters=32,
                    strides=(2, 2, 2),
-                   output_shape=None,
                    activation='relu',
                    padding="SAME",
                    weight_init='he_normal',
@@ -217,6 +215,7 @@ def deconv3D_layer(bottom,
 def conv2D_dilated_layer(bottom,
                          kernel_size=(3, 3),
                          num_filters=32,
+                         strides=(1, 1),
                          rate=1,
                          activation='relu',
                          padding="SAME",
@@ -281,14 +280,13 @@ As described in https://arxiv.org/pdf/1903.06586.pdf
 '''
 
 def selective_kernel_block(bottom,
-                           training,
                            num_filters=32,
                            kernel_size=(3, 3),
                            strides=(1, 1),
                            activation='relu',
                            padding="SAME",
                            weight_init='he_normal',
-                           use_bias=False
+                           use_bias=False,
                            M=2,
                            r=16,
                            L=32):
@@ -303,7 +301,7 @@ def selective_kernel_block(bottom,
     x = bottom
     xs = []
     for i in range(M):
-        net = layers.conv2D(filters=num_filters, kernel_size=kernel_size, strides=strides, padding=padding, 
+        net = layers.conv2D(filters=filters, kernel_size=kernel_size, strides=strides, padding=padding, 
                                 use_bias=use_bias, kernel_initializer=weight_init, dilation_rate=1+i)(bottom)
         net = batch_normalisation_layer(net)
         net = activation(net)
@@ -316,9 +314,9 @@ def selective_kernel_block(bottom,
 
     att_vec = []
     for i in range(M):
-        fcs = layers.Dense(input_feature, kernel_initializer='he_normal', use_bias=False)(fc)
+        fcs = layers.Dense(filters, kernel_initializer='he_normal', use_bias=False)(fc)
         fcs_soft = layers.Softmax()(fcs)
-        fea_V = layers.multiply([fcs_soft, x[i])
+        fea_V = layers.multiply([fcs_soft, x[i]])
         att_vec = att_vec.append(fea_V)
                                  
     y = layers.Add()(att_vec)
@@ -582,7 +580,7 @@ def residual_block(bottom,
     x = layers.Conv2D(filters=num_filters, kernel_size=kernel_size, strides=(strides[1], strides[1]), 
                       padding=padding, kernel_initializer=weight_init, use_bias=use_bias)(x)
     
-    shortcut = layers.Conv2D(filters=num_filters, 1, strides=(strides[0], strides[0]), 
+    shortcut = layers.Conv2D(filters=num_filters, kernel_size=1, strides=(strides[0], strides[0]), 
                              padding=padding, kernel_initializer=weight_init, 
                              use_bias=use_bias)(bottom)
     shortcut = layers.BatchNormalization()(shortcut)
@@ -609,7 +607,7 @@ def res_block_initial(bottom,
     x = layers.Activation(activation)(x)
     x = layers.Conv2D(filters=num_filters, kernel_size=kernel_size, strides=(strides[1], strides[1]), 
                       padding=padding, kernel_initializer=weight_init, use_bias=use_bias)(x)
-    shortcut = layers.Conv2D(filters=num_filters, 1, strides=(1, 1), padding=padding, 
+    shortcut = layers.Conv2D(filters=num_filters, kernel_size=1, strides=(1, 1), padding=padding, 
                              kernel_initializer=weight_init, use_bias=use_bias)(bottom)
     shortcut = layers.BatchNormalization()(shortcut)
 
