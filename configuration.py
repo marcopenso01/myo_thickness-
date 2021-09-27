@@ -23,8 +23,8 @@ augment_batch = True
 # Decay Learning rate
 time_decay = False      #LearningRate = LearningRate * 1/(1 + decay * epoch)
 step_decay = False      #LearningRate = InitialLearningRate * DropRate^floor(epoch / epochDrop)
-exp_decay = False       #LearningRate = InitialLearningRate * exp^(-decay * epoch)
-adaptive_decay = True  #LearningRate = InitialLearningRate * loss_function
+exp_decay = True       #LearningRate = InitialLearningRate * exp^(-decay * epoch)
+#adaptive_decay = True  #LearningRate = InitialLearningRate * loss_function
 
 # Augmentation settings
 do_rotation_range = True   #random rotation in range "rg" (min,max)
