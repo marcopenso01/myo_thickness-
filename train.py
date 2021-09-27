@@ -140,8 +140,6 @@ def run_training(continue_run):
                       metrics=metrics.dice_coefficient())
     
     step = init_step
-    no_improvement_counter = 0
-    last_train = np.inf
     train_loss_history = []
     val_loss_history = []
     train_dice_history = []
