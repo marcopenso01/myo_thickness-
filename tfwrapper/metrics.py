@@ -182,8 +182,8 @@ def hybrid_focal_loss(weight=None, alpha=None, beta=None, gamma=0.75, gamma_f=2.
         Focal loss' focal parameter controls degree of down-weighting of easy examples, by default 2.
     """
     def loss_function(y_true,y_pred):
-        focal_tversky = focal_tversky_loss(y_true, y_pred, gamma=gamma)
-        focal = focal_loss(y_true, y_pred, alpha=alpha, beta=beta, gamma_f=gamma_f)
+        focal_tversky = focal_tversky_loss(gamma=gamma)(y_true,y_pred)
+        focal = focal_loss(alpha=alpha, beta=beta, gamma_f=gamma_f)(y_true,y_pred)
         # return weighted sum of Focal loss and Focal Dice loss
         if weight is not None:
             return (weight * focal_tversky) + ((1-weight) * focal)
@@ -224,7 +224,7 @@ def asymmetric_focal_loss(delta=0.25, gamma=2.):
 #################################
 # Asymmetric Focal Tversky loss #
 #################################
-def asymmetric_focal_tversky_loss(delta=0.7, gamma=0.75, smooth=0.000001):
+def asymmetric_focal_tversky_loss(delta=0.7, gamma=0.75):
     """This is the implementation for binary segmentation.
     Parameters
     ----------
@@ -233,8 +233,6 @@ def asymmetric_focal_tversky_loss(delta=0.7, gamma=0.75, smooth=0.000001):
     value > 0.5 penalising FN predictions more than FP
     gamma : float, optional
         focal parameter controls degree of down-weighting of easy examples, by default 0.75
-    smooth : float, optional
-        smooithing constant to prevent division by 0 errors, by default 0.000001
     """
     def loss_function(y_true, y_pred):
         epsilon = backend.epsilon()
@@ -272,9 +270,9 @@ def unified_focal_loss(weight=0.5, delta=0.6, gamma=0.2):
         focal parameter controls the degree of background suppression and foreground enhancement, by default 0.2
     """
     def loss_function(y_true, y_pred):
-        asymmetric_ftl = asymmetric_focal_tversky_loss(y_true, y_pred, delta=delta, gamma=gamma)
+        asymmetric_ftl = asymmetric_focal_tversky_loss(delta=delta, gamma=gamma)(y_true,y_pred)
         # Obtain Asymmetric Focal loss
-        asymmetric_fl = asymmetric_focal_loss(y_true, y_pred, delta=delta, gamma=gamma)
+        asymmetric_fl = asymmetric_focal_loss(delta=delta, gamma=gamma)(y_true,y_pred)
         # return weighted sum of Asymmetrical Focal loss and Asymmetric Focal Tversky loss
         if weight is not None:
             return (weight * asymmetric_ftl) + ((1-weight) * asymmetric_fl)
