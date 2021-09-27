@@ -56,7 +56,7 @@ def unet2D_same(input_tensor, nlabels):
     elif nlabels >= 3:
         pred = lr.conv2D_layer_bn(conv9_2, num_filters=nlabels, kernel_size=(1,1), activation='softmax')
 
-    return Model(inputs, outputs)
+    return Model(inputs, pred)
 
 
 
