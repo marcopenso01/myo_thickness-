@@ -1,6 +1,5 @@
 import os
-import tensorflow as tf
-import model_structure
+import model_zoo
 
 experiment_name = 'test1'
 
@@ -39,7 +38,7 @@ prob = 1                   #Probability [0.0/1.0] (0 no augmentation, 1 always)
 data_root = 'F:\ARTEFACTS'      
 test_data_root = 'F:\ARTEFACTS'
 project_root = 'F:\ARTEFACTS'                       
-log_root = os.path.join(project_root, 'artefact_logdir')
+log_root = os.path.join(project_root, 'MyoMR_logdir')
 weights_root = os.path.join(log_root, experiment_name)
 
 # Pre-process settings
