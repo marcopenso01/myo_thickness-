@@ -139,12 +139,15 @@ def run_training(continue_run):
                       loss=loss, 
                       metrics=metrics.dice_coefficient())
     
+    last_train = np.inf
+    no_improvement_counter = 0
     step = init_step
     train_loss_history = []
     val_loss_history = []
     train_dice_history = []
     val_dice_history = []
     lr_history = []
+    penalizer = 0
         
     for epoch in range(init_epoch, config.max_epochs):
 
@@ -201,8 +204,15 @@ def run_training(continue_run):
             for i in range(len(train_temp)):
                 sum_loss += train_temp[i][0]
                 sum_dice += train_temp[i][1]
-            train_loss_history.append(sum_loss/len(train_temp))
-            train_dice_history.append(sum_dice/len(train_temp))
+            train_loss = sum_loss/len(train_temp)
+            train_dice = sum_dice/len(train_temp)
+            train_loss_history.append(train_loss)
+            train_dice_history.append(train_dice)
+            if train_loss < last_train:  # best_train found:
+                no_improvement_counter = 0
+            else:
+                no_improvement_counter = no_improvement_counter+1
+            last_train = train_loss
 
         # Validation Data Eval
         if not config.train_on_all_data:
@@ -257,8 +267,10 @@ def run_training(continue_run):
             model.optimizer.learning_rate.assign(curr_lr)
         elif config.exp_decay:
             qq = 0.01
-            curr_lr = config.learning_rate * math.exp(-qq*epoch)
+            curr_lr = config.learning_rate * math.exp(-qq*(epoch-penalizer))
             model.optimizer.learning_rate.assign(curr_lr)
+            #if no_improvement_counter % 80 == 0:
+            #    penalizer += 100
         elif config.adaptive_decay:
             curr_lr = config.learning_rate * val_loss
             model.optimizer.learning_rate.assign(curr_lr)
