@@ -31,7 +31,7 @@ do_rotation_range = True   #random rotation in range "rg" (min,max)
 rg = (0,359)
 do_fliplr = True           #Flip array in the left/right direction
 do_flipud = True           #Flip array in the up/down direction.
-gamma = True               #transforms the input image pixelwise according to the equation O = I**gamma
+gamma = False               #transforms the input image pixelwise according to the equation O = I**gamma
 prob = 1                   #Probability [0.0/1.0] (0 no augmentation, 1 always)
 
 # Paths settings (need to mount MyDrive before)
