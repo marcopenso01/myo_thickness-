@@ -28,6 +28,14 @@ def convert_to_uint8(image):
     return image.astype(np.uint8)
 
 
+def imfill(img):
+    im_floodfill = img.copy()
+    h, w = im_floodfill.shape[:2]
+    mask = np.zeros((h+2, w+2), np.uint8)
+    cv2.floodFill(im_floodfill, mask, (0,0), 255);
+    return img | cv2.bitwise_not(im_floodfill)
+
+
 def standardize_image(image):
     '''
     make image zero mean and unit standard deviation
