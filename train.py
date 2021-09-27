@@ -13,13 +13,13 @@ import glob
 import math
 import matplotlib.pyplot as plt
 from packaging import version
-from tensorflow.keras import Model, layers
+from tensorflow.keras.models import load_model
 from tfwrapper import metrics
 import utils
-import model as model
 import configuration as config
 import augmentation as aug
 from background_generator import BackgroundGenerator
+import model_zoo as model_zoo
 
 logging.basicConfig(
     level=logging.INFO # allow DEBUG level messages to pass through the logger
@@ -44,7 +44,7 @@ def run_training(continue_run):
     labels_train = data['masks_train'][()]
     data.close()
 
-    if not train_on_all_data:
+    if not config.train_on_all_data:
         data = h5py.File(os.path.join(config.data_root, 'val.hdf5'), 'r')
         images_val = data['images_train'][()]
         labels_val = data['masks_train'][()]
@@ -57,7 +57,7 @@ def run_training(continue_run):
     logging.info(' - Training Labels:')
     logging.info(labels_train.shape)
     logging.info(labels_train.dtype)
-    if not train_on_all_data:
+    if not config.train_on_all_data:
         logging.info(' - Validation Images:')
         logging.info(images_val.shape)
         logging.info(images_val.dtype)
@@ -65,16 +65,16 @@ def run_training(continue_run):
     print_txt(log_dir, ['\nData summary:'])
     print_txt(log_dir, ['\n - Training Images:\n'])
     print_txt(log_dir, str(images_train.shape))
-    print_txt(path, ['\n'])
+    print_txt(log_dir, ['\n'])
     print_txt(log_dir, str(images_train.dtype))
     print_txt(log_dir, ['\n - Training Labels:\n'])
     print_txt(log_dir, str(labels_train.shape))
-    print_txt(path, ['\n'])
+    print_txt(log_dir, ['\n'])
     print_txt(log_dir, str(labels_train.dtype))
-    if not train_on_all_data:
+    if not config.train_on_all_data:
         print_txt(log_dir, ['\n - Validation Images:\n'])
         print_txt(log_dir, str(images_val.shape))
-        print_txt(path, ['\n'])
+        print_txt(log_dir, ['\n'])
         print_txt(log_dir, str(images_val.dtype))
     
     nlabels = config.nlabels
@@ -110,7 +110,7 @@ def run_training(continue_run):
         # Build a model
         model = model_zoo.get_model(images_train, nlabels, config)
         model.summary()
-        with open(logdir + 'summary_report.txt','a') as fh:
+        with open(log_dir + 'summary_report.txt','a') as fh:
             model.summary(print_fn=lambda x: fh.write(x + '\n'))
         
         logging.info('compiling model...')
@@ -183,10 +183,10 @@ def run_training(continue_run):
             if config.adaptive_decay:
                 if (step + 1) % config.train_eval_frequency == 0:
                     logging.info('Training Data Eval:')
-                    [train_loss, train_dice] = do_eval(images_train,
+                    [train_loss, train_dice] = do_eval(model
+                                                       images_train,
                                                        labels_train,
-                                                       batch_size=config.batch_size,
-                                                       augment_batch=False)
+                                                       batch_size=config.batch_size)
 
                     curr_lr = config.learning_rate * train_loss
                     logging.info('Learning rate change to: %f' % curr_lr)
@@ -207,13 +207,13 @@ def run_training(continue_run):
             train_dice_history.append(sum_dice/len(train_temp))
 
         # Validation Data Eval
-        if not train_on_all_data:
+        if not config.train_on_all_data:
             logging.info('Validation Data Eval:')
             print_txt(log_dir, ['\nValidation Data Eval:'])
-            [val_loss, val_dice] = do_eval(images_val,
+            [val_loss, val_dice] = do_eval(model,
+                                           images_val,
                                            labels_val,
-                                           batch_size=config.batch_size,
-                                           augment_batch=False)
+                                           batch_size=config.batch_size)
             val_loss_history.append(val_loss)
             val_dice_history.append(val_dice)
 
@@ -295,14 +295,13 @@ def run_training(continue_run):
     plt.savefig(os.path.join(log_dir,'learning_rate.png')) 
     logging.info('END')
 
-def do_eval(images, labels, batch_size, augment_batch=False):
+def do_eval(model, images, labels, batch_size):
     '''
     Function for running the evaluations every X iterations on the training and validation sets. 
     :param images: A numpy array containing the images
     :param labels: A numpy array containing the corresponding labels 
     :param batch_size: batch size
-    :param augment_batch: should batch be augmented?
-    :return: The average loss and the average dice over all `images`. 
+    :return: The average loss and the average dice over all `images`.
     '''
     loss_ii = 0
     dice_ii = 0
