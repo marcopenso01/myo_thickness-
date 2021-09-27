@@ -20,6 +20,8 @@ def augmentation_function(images, labels):
     # Define in configuration.py which operations to perform
     do_rotation_range = config.do_rotation_range
     do_gamma = config.gamma
+    do_fliplr = config.do_fliplr
+    do_flipud = config.do_flipud
     
     # Probability to perform a generic operation
     prob = config.prob
