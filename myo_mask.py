@@ -1,24 +1,164 @@
+"""
+Created on Thu Oct  7 09:56:34 2021
+
+@author: Marco Penso
+"""
+
+import scipy
+import scipy.io
 import os
 import numpy as np
+import logging
 import h5py
+from skimage import transform
+import pydicom
+from sklearn.model_selection import train_test_split
 import cv2
-import pydicom # for reading dicom files
 import matplotlib.pyplot as plt
 
+def click_event(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        # print(x,",",y)
+        X.append(y)
+        Y.append(x)
+        cv2.destroyAllWindows()
 
-def makefolder(folder):
-    '''
-    Helper function to make a new folder if doesn't exist
-    :param folder: path to new folder
-    :return: True if folder created, False if folder already exists
-    '''
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-        return True
-    return False
+def flip_axis(x, axis):
+    x = np.asarray(x).swapaxes(axis, 0)
+    x = x[::-1, ...]
+    x = x.swapaxes(0, axis)
+    return x
+
+def setDicomWinWidthWinCenter(vol_data, winwidth, wincenter):
+    vol_temp = np.copy(vol_data)
+    min = (2 * wincenter - winwidth) / 2.0 + 0.5
+    max = (2 * wincenter + winwidth) / 2.0 + 0.5
+    dFactor = 255.0 / (max - min)
+    
+    vol_temp = ((vol_temp[:]-min)*dFactor).astype('int16')
+
+    min_index = vol_temp < 0
+    vol_temp[min_index] = 0
+    max_index = vol_temp > 255
+    vol_temp[max_index] = 255
+
+    return vol_temp
 
 
-def imfill(img):
+input_folder = r'F:\CT-tesi\Segmentation\1'
+output_file = os.path.join(input_folder, 'pre_proc_all.hdf5')
+hdf5_file = h5py.File(output_file, "w")
+
+pat_addrs = []
+               
+mat = scipy.io.loadmat(os.path.join(input_folder, 'ART1.mat'))
+vol_art = mat['ART1']
+
+vol_art = vol_art -1024
+
+vol_art_transp = vol_art.transpose([2,0,1])
+
+vol_art_flip = flip_axis(vol_art_transp,1)
+
+vol_bas_win = setDicomWinWidthWinCenter(vol_art_flip, 300, 150)
+
+n =  vol_art_flip.shape[0]
+first_sl = 400
+last_sl = 560
+for i in range(first_sl, last_sl, 10):
+  fig = plt.figure()
+  plt.title(i)
+  plt.imshow(vol_bas_win[i,...])
+  plt.show()
+
+
+vol_art_flip = vol_art_flip[first_sl:last_sl,...]
+vol_bas_win = vol_bas_win[first_sl:last_sl,...]
+
+X = []
+Y = []
+a = vol_bas_win[10,...]
+a = a[...,np.newaxis]
+b = np.concatenate((a,a,a,), axis=-1)
+cv2.imshow("image", b.astype('uint8'))
+cv2.namedWindow('image')
+cv2.setMouseCallback("image", click_event)
+cv2.waitKey(0)
+
+a = vol_bas_win[100,...]
+a = a[...,np.newaxis]
+b = np.concatenate((a,a,a,), axis=-1)
+cv2.imshow("image", b.astype('uint8'))
+cv2.namedWindow('image')
+cv2.setMouseCallback("image", click_event)
+cv2.waitKey(0)
+
+x = abs(int((X[0]+X[1])/2))
+y = abs(int((Y[0]+Y[1])/2))
+
+FWHM = 110
+art = vol_art_flip[:,X[0]-FWHM:X[0]+FWHM, Y[0]-FWHM:Y[0]+FWHM]
+win = vol_bas_win[:,X[0]-FWHM:X[0]+FWHM, Y[0]-FWHM:Y[0]+FWHM]
+
+print(vol_art_flip.shape, vol_art_flip.dtype, vol_art_flip.min(), vol_art_flip.max())
+print(vol_bas_win.shape, vol_bas_win.dtype, vol_bas_win.min(), vol_bas_win.max())
+
+for i in range(0, vol_bas_win.shape[0], 10):
+  fig = plt.figure()
+  plt.title(i)
+  plt.imshow(vol_bas_win[i,...])
+  plt.show()
+
+num_slices = vol_art_flip.shape[0]
+size = vol_art_flip.shape[1:3]
+
+dt = h5py.special_dtype(vlen=str)
+hdf5_file.create_dataset('ART', [num_slices] + list(size), dtype=np.int16)
+hdf5_file.create_dataset('ARTwin', [num_slices] + list(size), dtype=np.uint8)
+hdf5_file.create_dataset('paz', (num_slices,), dtype=dt)
+
+hdf5_file['ART'][:] = vol_art_flip[None]
+hdf5_file['ARTwin'][:] = vol_bas_win[None]
+for i in range(num_slices):
+    hdf5_file['paz'][i, ...] = input_folder.split('\\')[-1]
+
+hdf5_file.close()
+
+
+
+
+
+# -------------------------------------------------------------------------
+# ----------------------- segmenting myo ----------------------------------
+
+drawing=False # true if mouse is pressed
+mode=True
+
+def paint_draw(event,former_x,former_y,flags,param):
+    global current_former_x,current_former_y,drawing, mode
+    if event==cv2.EVENT_LBUTTONDOWN:
+        drawing=True
+        current_former_x,current_former_y=former_x,former_y
+    elif event==cv2.EVENT_MOUSEMOVE:
+        if drawing==True:
+            if mode==True:
+                cv2.line(img,(current_former_x,current_former_y),(former_x,former_y),(255,255,255),2)
+                cv2.line(image_binary,(current_former_x,current_former_y),(former_x,former_y),(255,255,255),2)
+                current_former_x = former_x
+                current_former_y = former_y
+    elif event==cv2.EVENT_LBUTTONUP:
+        drawing=False
+        if mode==True:
+            cv2.line(img,(current_former_x,current_former_y),(former_x,former_y),(255,255,255),2)
+            cv2.line(image_binary,(current_former_x,current_former_y),(former_x,former_y),(255,255,255),2)
+            current_former_x = former_x
+            current_former_y = former_y
+    return former_x,former_y
+  
+def imfill(img, dim):
+    img = img[:,:,0]
+    img = cv2.resize(img, (dim, dim))
+    img[img>0]=255
     im_floodfill = img.copy()
     h, w = im_floodfill.shape[:2]
     mask = np.zeros((h+2, w+2), np.uint8)
@@ -26,335 +166,86 @@ def imfill(img):
     return img | cv2.bitwise_not(im_floodfill)
 
 
-def crop_or_pad_slice_to_size(slice, nx, ny):
-    
-    if len(slice.shape) == 3:
-        stack = [slice[:,:,0], slice[:,:,1], slice[:,:,2]]
-        RGB = []
-    else:
-        stack = [slice]
-    
-    for i in range(len(stack)):
+path = r'F:\CT-tesi\Segmentation\2'
+
+
+output_file = os.path.join(path, 'seg_myo.hdf5')
+hdf5_file = h5py.File(output_file, "w")
+
+file = os.path.join(path, 'pre_proc.hdf5')
+data = h5py.File(file, 'r')
+art = data['ART'][()]
+
+art_img = []
+mask_myo = []
+mask_epi = []
+mask_endo = []
+tit=['epicardium', 'endocardium']
+print('len', len(art))
+
+for i in range(0, len(art), 4):
+    img = art[i]
+    art_img.append(img)
+    print("{}/{}".format(i, len(art)))
+    for ii in range(2):
+
+        dim = img.shape[0]
+
+        img = cv2.normalize(src=img, dst=None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)    
+        clahe = cv2.createCLAHE(clipLimit = 1.5)
+        img = clahe.apply(img)
+        img = cv2.resize(img, (400, 400), interpolation = cv2.INTER_CUBIC)
+
+        image_binary = np.zeros((img.shape[0], img.shape[1], 1), np.uint8)
+
+        cv2.namedWindow(tit[ii])
+        cv2.setMouseCallback(tit[ii],paint_draw)
+        while(1):
+            cv2.imshow(tit[ii],img)
+            k=cv2.waitKey(1)& 0xFF
+            if k==27: #Escape KEY
+                if ii==0:
+                    
+                    im_out1 = imfill(image_binary, dim)
+                    im_out1[im_out1>0]=255
+                    #fig = plt.figure()
+                    #plt.imshow(im_out1)
+                    #plt.show()
+                    
+                elif ii==1:
+                                            
+                    im_out2 = imfill(image_binary, dim)
+                    im_out2[im_out2>0]=255
+                    #fig = plt.figure()
+                    #plt.imshow(im_out2)
+                    #plt.show()
+                break
+        cv2.destroyAllWindows()
         
-        img = stack[i]
-            
-        x, y = img.shape
-        
-        x_s = (x - nx) // 2
-        y_s = (y - ny) // 2
-        x_c = (nx - x) // 2
-        y_c = (ny - y) // 2
-    
-        if x > nx and y > ny:
-            slice_cropped = img[x_s:x_s + nx, y_s:y_s + ny]
-        else:
-            slice_cropped = np.zeros((nx, ny))
-            if x <= nx and y > ny:
-                slice_cropped[x_c:x_c + x, :] = img[:, y_s:y_s + ny]
-            elif x > nx and y <= ny:
-                slice_cropped[:, y_c:y_c + y] = img[x_s:x_s + nx, :]
-            else:
-                slice_cropped[x_c:x_c + x, y_c:y_c + y] = img[:, :]
-        if len(stack)>1:
-            RGB.append(slice_cropped)
-    
-    if len(stack)>1:
-        return np.dstack((RGB[0], RGB[1], RGB[2]))
-    else:
-        return slice_cropped
-    
-    
-def crop_or_pad_slice_to_size_specific_point(slice, nx, ny, cx, cy):
-    
-    if len(slice.shape) == 3:
-        stack = [slice[:,:,0], slice[:,:,1], slice[:,:,2]]
-        RGB = []
-    else:
-        stack = [slice]
-        
-    for i in range(len(stack)):
-        img = stack[i]
-        x, y = img.shape
-        y1 = (cy - (ny // 2))
-        y2 = (cy + (ny // 2))
-        x1 = (cx - (nx // 2))
-        x2 = (cx + (nx // 2))
-    
-        if y1 < 0:
-            img = np.append(np.zeros((x, abs(y1))), img, axis=1)
-            x, y = img.shape
-            y1 = 0
-        if x1 < 0:
-            img = np.append(np.zeros((abs(x1), y)), img, axis=0)
-            x, y = img.shape
-            x1 = 0
-        if y2 > 512:
-            img = np.append(img, np.zeros((x, y2 - 512)), axis=1)
-            x, y = img.shape
-        if x2 > 512:
-            img = np.append(img, np.zeros((x2 - 512, y)), axis=0)
-    
-        slice_cropped = img[x1:x1 + nx, y1:y1 + ny]
-        if len(stack)>1:
-            RGB.append(slice_cropped)
-        
-    if len(stack)>1:
-        return np.dstack((RGB[0], RGB[1], RGB[2]))
-    else:
-        return slice_cropped
+    im_out1[im_out1>0]=1
+    im_out2[im_out2>0]=1
+    mask = im_out1 - im_out2
+    mask_epi.append(im_out1)
+    mask_endo.append(im_out2)
+    mask_myo.append(mask)
+    plt.figure()
+    plt.imshow(mask)
 
+num_slices = len(mask_myo)
+size = mask_myo[0].shape
+dt = h5py.special_dtype(vlen=str)
+hdf5_file.create_dataset('art_img', [num_slices] + list(size), dtype=np.int16)
+hdf5_file.create_dataset('mask_myo', [num_slices] + list(size), dtype=np.uint8)
+hdf5_file.create_dataset('mask_end', [num_slices] + list(size), dtype=np.uint8)
+hdf5_file.create_dataset('mask_epi', [num_slices] + list(size), dtype=np.uint8)
+hdf5_file.create_dataset('paz', (len(mask_myo),), dtype=dt)
+
+for ii in range(len(mask_myo)):
+    hdf5_file['art_img'][ii] = art_img[ii]
+    hdf5_file['mask_myo'][ii] = mask_myo[ii]
+    hdf5_file['mask_end'][ii] = mask_end[ii]
+    hdf5_file['mask_epi'][ii] = mask_epi[ii]
+    hdf5_file['paz'][ii] = path.split("\\")[-1]
     
-    
-def generator_mask(img, green_pixels):
-    
-    mask_epi = imfill(green_pixels)
-    
-    if len(np.argwhere(mask_epi)) == len(np.argwhere(green_pixels)):
-        val = 11
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (val, val))
-        result = cv2.morphologyEx(green_pixels, cv2.MORPH_CLOSE, kernel)
-        while len(np.argwhere(result)) == len(np.argwhere(imfill(result))):
-            val += 2
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (val, val))
-            result = cv2.morphologyEx(green_pixels, cv2.MORPH_CLOSE, kernel)
-        mask_epi = imfill(result)
-        
-    red_pixels = cv2.inRange(img, (110, 0, 0), (255, 100, 100))
-    
-    if len(np.argwhere(red_pixels)) > 5:
-        
-        if len(np.argwhere(red_pixels)) != len(np.argwhere(imfill(red_pixels))):
-            
-            mask_endo = imfill(red_pixels)  #mask LV
-        else:
-            val = 11
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (val, val))
-            result = cv2.morphologyEx(red_pixels, cv2.MORPH_CLOSE, kernel)
-            while len(np.argwhere(result)) == len(np.argwhere(imfill(result))):
-                val += 2
-                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (val, val))
-                result = cv2.morphologyEx(red_pixels, cv2.MORPH_CLOSE, kernel)
-            mask_endo = imfill(result)
-        
-        if len(np.argwhere(green_pixels)) == len(np.argwhere(imfill(green_pixels))):
-            mask_epi = imfill(mask_endo+mask_epi)
-
-        mask_myo = mask_epi - mask_endo  #mask Myo
-        
-        mask_myo[mask_myo>0]=1
-    
-    return mask_myo
-
-
-def prepare_data(input_folder, output_file, nx, ny):
-    
-    hdf5_file = h5py.File(output_file, "w")
-    
-    # 1: 'RV', 2: 'Myo', 3: 'LV'
-    addrs = []
-    MASK = []
-    IMG_SEG = []  #img in uint8 con segmentazione
-    IMG_RAW = []  #img in float senza segmentazione
-
-    path_seg = os.path.join(input_folder, 'seg')
-    path_seg = os.path.join(path_seg, os.listdir(path_seg)[0])
-
-    path_raw = os.path.join(input_folder, 'raw')
-    path_raw = os.path.join(path_raw, os.listdir(path_raw)[0])
-
-
-    for i in range(len(os.listdir(path_seg))):
-        dcmPath = os.path.join(path_seg, os.listdir(path_seg)[i])
-        data_row_img = pydicom.dcmread(dcmPath)
-        img = data_row_img.pixel_array
-        img = crop_or_pad_slice_to_size(img, 390, 390)
-        temp_img = img.copy()
-        for r in range(0, img.shape[0]):
-            for c in range(0, img.shape[1]):
-                if img[r,c,0] == img[r,c,1] == img[r,c,2]:
-                    temp_img[r,c,:]=0
-
-        green_pixels = cv2.inRange(temp_img, (0, 110, 0), (125, 255, 125))
-
-        if len(np.argwhere(green_pixels)) > 5:
-            
-            green_pixels2 = green_pixels.copy()
-            for xx in range(len(np.argwhere(green_pixels))):
-                coord = np.argwhere(green_pixels)[xx]
-                if temp_img[coord[0],coord[1],0] == temp_img[coord[0],coord[1],1]:
-                    green_pixels2[coord[0],coord[1]] = 0
-            
-            final_mask = generator_mask(temp_img, green_pixels2)
-            
-            print(i+1, final_mask.max(), final_mask.min())
-
-            if final_mask.max() > 1:
-                print('ERROR: max value of the mask %d is %d' % (i+1, final_mask.max()))
-                plt.figure()
-                plt.imshow(final_mask)
-                plt.title('error mask %d' % (i+1));
-                final_mask[final_mask>1]=1
-                plt.figure()
-                plt.imshow(final_mask)
-                plt.title('corrected mask %d' % (i+1));
-            MASK.append(final_mask)
-            addrs.append(dcmPath)
-            IMG_SEG.append(img)
-
-            # save data raw
-            dcmPath = os.path.join(path_raw, os.listdir(path_raw)[i])
-            data_row_img = pydicom.dcmread(dcmPath)
-            img = data_row_img.pixel_array
-            img = crop_or_pad_slice_to_size(img, 390, 390)
-            IMG_RAW.append(img)
-                
-    CX = []
-    CY = []
-    LEN_X = []
-    LEN_Y = []
-    for ii in range(0,7):
-        
-        img = MASK[ii]
-        index = img > 0
-        a = img.copy()
-        a[index] = 1
-        #plt.imshow(a)
-        contours, hier = cv2.findContours(a, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        top_left_x = 1000
-        top_left_y = 1000
-        bottom_right_x = 0
-        bottom_right_y = 0
-        for cntr in contours:
-            x,y,w,h = cv2.boundingRect(cntr)
-            if x < top_left_x:
-                top_left_x = x
-            if y < top_left_y:
-                top_left_y= y
-            if x+w-1 > bottom_right_x:
-                bottom_right_x = x+w-1
-            if y+h-1 > bottom_right_y:
-                bottom_right_y = y+h-1        
-        top_left = (top_left_x, top_left_y)
-        bottom_right = (bottom_right_x, bottom_right_y)
-        #print('top left=',top_left)
-        #print('bottom right=',bottom_right)
-        cx = int((top_left[1]+bottom_right[1])/2)   #row
-        cy = int((top_left[0]+bottom_right[0])/2)   #column
-        len_x = int(bottom_right[1]-top_left[1]) +5
-        len_y = int(bottom_right[0]-top_left[0]) +5
-        #print(len_x, len_y)
-        CX.append(cx)
-        CY.append(cy)
-        LEN_X.append(len_x)
-        LEN_Y.append(len_y)
-        
-        '''
-        # plot crop region
-        for i in range(top_left[0],bottom_right[0]+1):
-            a[top_left[1]-1,i]=1
-        for i in range(top_left[0],bottom_right[0]+1):
-            a[bottom_right[1]+1,i]=1
-        for i in range(top_left[1],bottom_right[1]+1):
-            a[i, top_left[0]-1]=1
-        for i in range(top_left[1],bottom_right[1]+1):
-            a[i, bottom_right[0]+1]=1
-        plt.figure()
-        plt.imshow(a)
-        '''
-    cx = int(np.asarray(CX[:]).mean())
-    cy = int(np.asarray(CY[:]).mean())
-    len_x = int(np.asarray(LEN_X).max())
-    len_y = int(np.asarray(LEN_Y).max())
-    
-    len_max = max(len_x, len_y)
-    
-    print(len_max)
-    
-    for i in range(len(IMG_SEG)):
-        
-        if len_max+34 < nx and len_max+34 < ny:
-            IMG_SEG[i] = crop_or_pad_slice_to_size_specific_point(IMG_SEG[i], nx, ny, cx, cy)
-            IMG_RAW[i] = crop_or_pad_slice_to_size_specific_point(IMG_RAW[i], nx, ny, cx, cy)
-            MASK[i] = crop_or_pad_slice_to_size_specific_point(MASK[i], nx, ny, cx, cy)
-        else:
-            tt = 34
-            IMG_SEG[i] = crop_or_pad_slice_to_size_specific_point(IMG_SEG[i], len_max+tt, len_max+tt, cx, cy)
-            IMG_RAW[i] = crop_or_pad_slice_to_size_specific_point(IMG_RAW[i], len_max+tt, len_max+tt, cx, cy)
-            MASK[i] = crop_or_pad_slice_to_size_specific_point(MASK[i], len_max+tt, len_max+tt, cx, cy)
-            
-            IMG_SEG[i] = cv2.resize(IMG_SEG[i], (nx, ny), interpolation=cv2.INTER_AREA)
-            IMG_RAW[i] = cv2.resize(IMG_RAW[i], (nx, ny), interpolation=cv2.INTER_AREA)
-            MASK[i] = cv2.resize(MASK[i], (nx, ny), interpolation=cv2.INTER_NEAREST)
-        '''
-        plt.figure()
-        plt.imshow(IMG_SEG[i])
-        plt.title(i)
-        plt.figure()
-        plt.imshow(MASK[i])
-        plt.title(i)
-        '''
-    dt = h5py.special_dtype(vlen=str)
-    hdf5_file.create_dataset('paz', (len(addrs),), dtype=dt)
-    hdf5_file.create_dataset('num_img', (len(addrs),), dtype=dt)
-    hdf5_file.create_dataset('mask', [len(addrs)] + [nx, ny], dtype=np.uint8)
-    hdf5_file.create_dataset('img_seg', [len(addrs)] + [nx, ny, 3], dtype=np.uint8)
-    hdf5_file.create_dataset('img_raw', [len(addrs)] + [nx, ny], dtype=np.float32)
-
-    
-    for i in range(len(addrs)):
-         hdf5_file['paz'][i, ...] = addrs[i].split("\\")[0].split("/")[-1]
-         hdf5_file['num_img'][i, ...] = addrs[i].split("\\")[-1]
-         hdf5_file['mask'][i, ...] = MASK[i]
-         hdf5_file['img_seg'][i, ...] = IMG_SEG[i]
-         hdf5_file['img_raw'][i, ...] = IMG_RAW[i]
-    
-    # After loop:
-    hdf5_file.close()
-    
-
-def load_and_maybe_process_data(input_folder,
-                                preprocessing_folder,
-                                nx,
-                                ny):
-        
-    '''
-    This function is used to load and if necessary preprocesses the dataset
-    
-    :param input_folder: Folder where the raw data is located 
-    :param preprocessing_folder: Folder where the proprocessed data should be written to
-    :parm nx, ny: crop size
-    
-    :return: Returns an h5py.File handle to the dataset
-    '''  
-    data_file_name = 'maskMyo.hdf5'
-
-    data_file_path = os.path.join(preprocessing_folder, data_file_name)
-
-    makefolder(preprocessing_folder)
-
-    if not os.path.exists(data_file_path):
-
-        print('This configuration of mode, size and target resolution has not yet been preprocessed')
-        print('Preprocessing now!')
-        prepare_data(input_folder, data_file_path, nx, ny)
-
-    else:
-
-        print('Already preprocessed this configuration. Loading now!')
-
-    #return h5py.File(data_file_path, 'r')
-
-
-if __name__ == '__main__':
-
-    # Paths settings
-    input_folder = r'F:/Myo_thickness/MR/train'
-    nx = 160
-    ny = 160
-    for file in os.listdir(input_folder):
-        path = os.path.join(input_folder, file)
-        if not os.path.exists(os.path.join(path, 'pre_proc')):
-            print(path)
-            preprocessing_folder = os.path.join(path, 'pre_proc')
-    
-            d=load_and_maybe_process_data(path, preprocessing_folder, nx, ny)
+data.close()
+hdf5_file.close()
